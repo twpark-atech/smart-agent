@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Agent</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ── 사이드바 ── -->
+<aside id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">⚡</div>
+    <span>Smart Agent</span>
+  </div>
+  <nav class="sidebar-nav" id="sidebar-nav">
+    <!-- JS로 동적 생성 -->
+  </nav>
+</aside>
+
+<!-- ── 메인 ── -->
+<div id="main">
+  <header id="topbar">
+    <span id="topbar-title" class="topbar-title">대시보드</span>
+    <div class="topbar-right">
+      <div id="health-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text-dim)" title="서버 상태 확인 중"></div>
+      <span class="text-dim text-sm" id="health-label">연결 중...</span>
+    </div>
+  </header>
+  <main id="content">
+    <!-- 페이지 콘텐츠 -->
+  </main>
+</div>
+
+<!-- ── 토스트 컨테이너 ── -->
+<div id="toast-container"></div>
+
+<!-- ── 스크립트 ── -->
+<script src="/static/js/api.js"></script>
+<script src="/static/js/app.js"></script>
+<script>
+  // 헬스 체크
+  (async function checkHealth() {
+    const dot   = document.getElementById('health-dot');
+    const label = document.getElementById('health-label');
+    try {
+      await healthCheck();
+      dot.style.background   = 'var(--success)';
+      label.textContent      = '연결됨';
+      label.style.color      = 'var(--success)';
+    } catch {
+      dot.style.background   = 'var(--danger)';
+      label.textContent      = '연결 끊김';
+      label.style.color      = 'var(--danger)';
+    }
+    setTimeout(checkHealth, 30000);
+  })();
+</script>
+</body>
+</html>
