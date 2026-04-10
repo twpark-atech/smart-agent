@@ -5,11 +5,15 @@
 """
 from __future__ import annotations
 
+import json
+import queue
 import sys
+import threading
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 # retriever 모듈 경로 주입
@@ -38,6 +42,43 @@ class QueryResponse(BaseModel):
 
 
 # ── 엔드포인트 ────────────────────────────────────────────────────────────
+
+@router.post("/query/stream", summary="스트리밍 검색 질의 (SSE)")
+def query_stream(body: QueryRequest):
+    """
+    질의를 SSE(Server-Sent Events) 스트림으로 실행합니다.
+
+    - `data: {"type":"progress","agent":"planner","label":"계획 수립","message":"..."}` — 에이전트 진행 이벤트
+    - `data: {"type":"done","result":{...}}` — 최종 결과 (QueryResponse 형식)
+    - `data: {"type":"error","detail":"..."}` — 오류 발생
+    """
+    if not body.query.strip():
+        raise HTTPException(status_code=422, detail="query는 비어 있을 수 없습니다.")
+
+    event_queue: queue.SimpleQueue = queue.SimpleQueue()
+
+    def _run():
+        try:
+            result = orchestrator.run(body.query, progress_cb=event_queue.put)
+            event_queue.put({"type": "done", "result": result})
+        except Exception as e:
+            event_queue.put({"type": "error", "detail": str(e)})
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    def _generate():
+        while True:
+            ev = event_queue.get()
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+            if ev.get("type") in ("done", "error"):
+                break
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
 
 @router.post("/query", response_model=QueryResponse, summary="검색 질의 실행")
 def query(body: QueryRequest):

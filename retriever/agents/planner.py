@@ -108,6 +108,35 @@ def _parse_json(text: str) -> dict:
         return {}
 
 
+# 내부 문서 검색을 강제하는 패턴 (LLM이 web으로 오분류하는 것 방지)
+_INTERNAL_DOC_PATTERNS = [
+    # 한국어 문서 관련 키워드
+    "보고서", "연례 보고서", "연간 보고서", "요약", "문서", "내부 문서",
+    "제\d+회", "제\d+차", "백서", "지침", "가이드라인", "매뉴얼",
+    "정책서", "규정집", "내규", "기술 문서", "설명서", "공문",
+    # 영어 문서 관련 키워드
+    "annual report", "report", "document", "summary", "white paper",
+    "guideline", "manual", "policy", "regulation", "bulletin",
+]
+
+import re as _re
+
+_INTERNAL_DOC_RE = _re.compile(
+    "|".join(_INTERNAL_DOC_PATTERNS),
+    flags=_re.IGNORECASE,
+)
+
+
+def _override_task_type(query: str, llm_task_type: str) -> str:
+    """LLM이 web으로 분류했을 때, 내부 문서 검색 패턴이 있으면 document로 재분류."""
+    if llm_task_type == "web" and _INTERNAL_DOC_RE.search(query):
+        logger.info(
+            "task_type override: web → document (내부 문서 패턴 감지: %r)", query
+        )
+        return "document"
+    return llm_task_type
+
+
 def plan(query: str) -> TaskQueue:
     """사용자 질의를 분석하여 TaskQueue를 생성."""
     prompt = _PLAN_PROMPT.format(
@@ -125,6 +154,9 @@ def plan(query: str) -> TaskQueue:
     task_type = data.get("task_type", "document")
     if task_type not in ("document", "web", "quantitative", "mixed"):
         task_type = "document"
+
+    # LLM 오분류 보정: 내부 문서 패턴이 있으면 web → document
+    task_type = _override_task_type(query, task_type)
 
     domain = data.get("domain", DOMAINS[0])
     if domain not in DOMAINS:

@@ -67,6 +67,11 @@ function deleteJob(jobId) {
   return _fetch(`/parser/jobs/${jobId}`, { method: 'DELETE' });
 }
 
+/** 문서 메타데이터 조회 */
+function getDocMeta(jobId) {
+  return _fetch(`/parser/jobs/${jobId}/meta`);
+}
+
 /** 섹션 목록 조회 */
 function listSections(jobId) {
   return _fetch(`/parser/jobs/${jobId}/sections`);
@@ -84,12 +89,69 @@ function imageUrl(minioKey) {
 
 // ── Retriever API ────────────────────────────────────────────────────────
 
-/** RAG 질의 */
+/** RAG 질의 (단일 응답) */
 function queryRetriever(query) {
   return _fetch('/retriever/query', {
     method: 'POST',
     body: JSON.stringify({ query }),
   });
+}
+
+/**
+ * RAG 스트리밍 질의 (SSE)
+ * onEvent(ev): progress / done / error 이벤트마다 호출
+ * 반환값: AbortController (취소 가능)
+ */
+function queryRetrieverStream(query, onEvent) {
+  const ctrl = new AbortController();
+
+  (async () => {
+    let res;
+    try {
+      res = await fetch('/retriever/query/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      if (e.name !== 'AbortError') onEvent({ type: 'error', detail: e.message });
+      return;
+    }
+
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try { detail = (await res.json()).detail || detail; } catch {}
+      onEvent({ type: 'error', detail });
+      return;
+    }
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer    = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          try {
+            const ev = JSON.parse(part.slice(6));
+            onEvent(ev);
+            if (ev.type === 'done' || ev.type === 'error') return;
+          } catch {}
+        }
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') onEvent({ type: 'error', detail: e.message });
+    }
+  })();
+
+  return ctrl;
 }
 
 // ── Health ────────────────────────────────────────────────────────────────

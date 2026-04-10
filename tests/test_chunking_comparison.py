@@ -24,8 +24,9 @@ from openai import OpenAI
 from opensearchpy import OpenSearch
 
 # ── 설정 ──
-PARSED_MD_PATH = "/home/atech/Projects/smart-agent/tests/parsed_output.md"
-OUTPUT_DIR = Path("/home/atech/Projects/smart-agent/tests/chunking_output")
+_ROOT = Path(__file__).parent.parent
+PARSED_MD_PATH = str(_ROOT / "tests" / "parsed_output.md")
+OUTPUT_DIR = _ROOT / "tests" / "chunking_output"
 
 EMBEDDING_URL = "http://112.163.62.170:8032/v1"
 EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
@@ -656,7 +657,7 @@ def visualize(eval1: dict, eval2: dict, cost1: dict, cost2: dict):
                      fontsize=13, fontweight='bold', y=1.01)
         plt.tight_layout()
 
-        output_path = "/home/atech/Projects/smart-agent/tests/chunking_comparison_test.png"
+        output_path = str(Path(__file__).parent / "chunking_comparison_test.png")
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         print(f"\n시각화 저장: {output_path}")
         plt.close()

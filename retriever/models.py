@@ -149,18 +149,28 @@ class SearchResult:
 class StructuredSection:
     section: str
     content: str
-    sources: list[str]
+
+
+@dataclass
+class BlockRef:
+    """섹션 단위 출처 참조 - 출처 후처리에 사용."""
+    section_id: int
+    first_page: int | None = None
+    last_page: int | None = None
 
 
 @dataclass
 class AggregatedContent:
     structured_content: list[StructuredSection]
+    block_refs: list[BlockRef] = field(default_factory=list)
+    web_refs: list[str] = field(default_factory=list)   # 웹 검색 출처 URL 목록
 
 
 @dataclass
 class WriterOutput:
     answer: str
-    sources: list[str]
+    block_refs: list[BlockRef] = field(default_factory=list)
+    web_refs: list[str] = field(default_factory=list)
 
 
 @dataclass

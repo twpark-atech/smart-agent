@@ -18,7 +18,7 @@ from config import (
     POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD,
     MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET, MINIO_SECURE,
 )
-from models import TaskQueue, STATUS_IN_PROGRESS, STATUS_DONE, STATUS_FAILED
+from models import TaskQueue, BlockRef, STATUS_IN_PROGRESS, STATUS_DONE, STATUS_FAILED
 from tools import opensearch_search
 from tools import postgres_search
 from tools import web_search
@@ -125,6 +125,24 @@ def _fetch_section_images(section_id: int) -> list[dict]:
     return images
 
 
+def _fetch_section_ref(section_id: int) -> BlockRef:
+    """섹션의 첫/마지막 페이지를 조회하여 섹션 단위 BlockRef 반환."""
+    try:
+        with _pg_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT MIN(page), MAX(page) FROM parser_blocks "
+                    "WHERE section_id = %s AND page IS NOT NULL",
+                    (section_id,),
+                )
+                row = cur.fetchone()
+                if row and row[0] is not None:
+                    return BlockRef(section_id=section_id, first_page=row[0], last_page=row[1])
+    except Exception as e:
+        logger.warning("섹션 참조 조회 실패 (section_id=%d): %s", section_id, e)
+    return BlockRef(section_id=section_id)
+
+
 def _fetch_section_meta(section_id: int) -> dict:
     """section_id에 해당하는 섹션 메타 정보 조회."""
     try:
@@ -166,6 +184,7 @@ def _expand_node_results(node_results: list[dict]) -> list[dict]:
         full_content = _fetch_section_content(section_id)
         meta         = _fetch_section_meta(section_id)
         images       = _fetch_section_images(section_id)
+        block_ref    = _fetch_section_ref(section_id)
 
         if not full_content:
             full_content = rep.get("content", "")
@@ -180,6 +199,7 @@ def _expand_node_results(node_results: list[dict]) -> list[dict]:
             "matched_proposition": rep.get("content", ""),
             "keywords":            rep.get("keywords", []),
             "images":              images,   # [{"minio_key", "mime", "base64"}, ...]
+            "block_ref":           block_ref,  # 섹션 단위 BlockRef (1개)
             "source_type":         "node",
             "source": {
                 "file_name":     meta.get("source_path", ""),

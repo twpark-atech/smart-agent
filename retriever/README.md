@@ -143,6 +143,16 @@ retriever/
 | `quantitative` | 수치·통계·집계 결과 필요 |
 | `mixed` | document + web 복합 |
 
+#### task_type 오분류 보정 (`_override_task_type`)
+
+소형 LLM(3B)이 "보고서", "연례 보고서", "제N회", "summary" 등 **내부 문서를 특정하는 패턴**이 포함된 질의를 `web`으로 잘못 분류하는 경우가 있습니다.
+이를 방지하기 위해 LLM 응답 이후 규칙 기반 보정을 적용합니다.
+
+- **조건**: LLM이 `web`으로 분류했고, 질의에 내부 문서 패턴이 감지되는 경우
+- **동작**: `web` → `document` 로 강제 재분류
+- **패턴 예시**: `보고서`, `연례 보고서`, `요약`, `문서`, `백서`, `제\d+회`, `annual report`, `report`, `summary`, `policy` 등
+- **로그**: `task_type override: web → document (내부 문서 패턴 감지: ...)` 형태로 기록
+
 ### Retriever
 - Task Queue의 step을 의존성 순서에 따라 실행
 - 의존성 없는 step은 `ThreadPoolExecutor`로 병렬 실행 (`mixed` 타입에서 document + web 동시 실행)

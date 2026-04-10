@@ -1,4 +1,4 @@
-#!/home/atech/Projects/smart-agent/.venv/bin/python
+#!/home/atech/Projects/smart-agent/smart-agent/.venv/bin/python3
 
 ##############################################################################
 #

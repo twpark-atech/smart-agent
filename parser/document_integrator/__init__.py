@@ -118,14 +118,26 @@ def _update_document(document_id: str, summary: str, keywords: list[str]) -> Non
         conn.commit()
 
 
+_GENERIC_SECTION_NAMES = {
+    "문서 헤더", "헤더", "개요", "서론", "목차", "서문", "소개", "본문",
+    "introduction", "header", "overview", "preface", "contents", "table of contents",
+}
+
+
 def _extract_doc_name(source_path: str, propositions_by_section: list[dict]) -> str:
-    """문서명을 추출. 최상위 섹션 경로(목차 첫 번째 항목)를 우선하고, 없으면 파일명 사용."""
-    # 최상위 섹션 경로에서 문서 제목 추출 (예: "1장 서론 > 1.1 배경" → "1장 서론")
+    """문서명을 추출.
+
+    우선순위:
+    1. 최상위 섹션 경로에서 실제 제목으로 보이는 값 (generic 이름 제외)
+    2. 파일명(확장자 제거)
+    """
     if propositions_by_section:
-        first_path = propositions_by_section[0].get("section_path", "")
-        if first_path:
-            top_section = first_path.split(">")[0].strip()
-            if top_section:
+        for section in propositions_by_section:
+            section_path = section.get("section_path", "")
+            if not section_path:
+                continue
+            top_section = section_path.split(">")[0].strip()
+            if top_section and top_section.lower() not in _GENERIC_SECTION_NAMES:
                 return top_section
 
     # 폴백: 파일명에서 확장자 제거

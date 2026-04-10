@@ -14,8 +14,10 @@ _client = OpenAI(base_url=LLM_URL, api_key=LLM_API_KEY)
 
 # ── domain_type.md 파싱 ───────────────────────────────────
 
+_DEFAULT_DOMAIN_TYPE_PATH = str(Path(__file__).parent.parent.parent / "domain_type.md")
+
 def _load_domain_categories(
-    path: str = "/home/atech/Projects/smart-agent/domain_type.md",
+    path: str = _DEFAULT_DOMAIN_TYPE_PATH,
 ) -> list[str]:
     """domain_type.md에서 대분류명(## 레벨) 목록만 추출."""
     categories = []

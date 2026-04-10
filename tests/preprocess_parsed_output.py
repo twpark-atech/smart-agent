@@ -12,8 +12,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 
 # ── 설정 ──
-PARSED_MD_PATH = "/home/atech/Projects/smart-agent/tests/parsed_output.md"
-OUTPUT_PATH = "/home/atech/Projects/smart-agent/tests/parsed_output_corrected.md"
+_ROOT = Path(__file__).parent.parent
+PARSED_MD_PATH = str(_ROOT / "tests" / "parsed_output.md")
+OUTPUT_PATH = str(_ROOT / "tests" / "parsed_output_corrected.md")
 LLM_URL = "http://112.163.62.170:8012/v1"
 LLM_API_KEY = "3c035ed9e73c0453a0b0dabe54823ca095857f77a87dfea5b5f50013f18320d9"
 LLM_MODEL = "Qwen3-VL-32B-Instruct-AWQ"

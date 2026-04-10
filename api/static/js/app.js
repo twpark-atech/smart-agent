@@ -208,32 +208,96 @@ async function loadDashboardStats(el) {
   </table></div>`;
 }
 
-async function quickQuery() {
+// ── 에이전트 진행 상황 표시 공통 헬퍼 ────────────────────────────────
+const AGENT_ICONS = {
+  planner:    '🗺',
+  retriever:  '🔍',
+  aggregator: '🔬',
+  writer:     '✏️',
+  supervisor: '✅',
+};
+
+function renderThinking(label, message) {
+  const icon = AGENT_ICONS[label] || '⚙️';
+  return `
+    <div class="agent-thinking">
+      <div class="thinking-header">
+        <span class="thinking-pulse"></span>
+        <span class="thinking-label">${escHtml(label)}</span>
+      </div>
+      <div class="thinking-message">${icon} ${escHtml(message)}</div>
+    </div>`;
+}
+
+/**
+ * 스트리밍 질의 공통 실행기
+ * @param {string} query
+ * @param {HTMLElement} statusEl  — 진행 상태를 교체할 요소
+ * @param {function} onDone       — fn(result, elapsedSec)
+ * @param {function} onError      — fn(msg)
+ * @returns {AbortController}
+ */
+function runStreamQuery(query, statusEl, onDone, onError) {
+  const startTime = Date.now();
+
+  return queryRetrieverStream(query, ev => {
+    if (ev.type === 'progress') {
+      statusEl.innerHTML = renderThinking(ev.label, ev.message);
+    } else if (ev.type === 'done') {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      onDone(ev.result, elapsed);
+    } else if (ev.type === 'error') {
+      onError(ev.detail || '알 수 없는 오류');
+    }
+  });
+}
+
+function quickQuery() {
   const q = document.getElementById('quick-query').value.trim();
   if (!q) return toast('질의를 입력하세요', 'error');
   const ansEl = document.getElementById('quick-answer');
   ansEl.style.display = 'block';
-  ansEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><div class="spinner"></div> 검색 중...</div>`;
-  try {
-    const result = await queryRetriever(q);
-    if (result.status === 'success') {
-      ansEl.innerHTML = `<div class="answer-box">
-        <div class="answer-status text-success">✓ 답변 완료</div>
-        <div class="answer-text">${escHtml(result.answer)}</div>
-      </div>`;
-    } else {
-      ansEl.innerHTML = `<div class="answer-box">
-        <div class="answer-status text-danger">✕ ${escHtml(result.reason || '실패')}</div>
-        <div class="text-dim text-sm">${escHtml(result.detail || '')}</div>
-      </div>`;
-    }
-  } catch(e) {
-    ansEl.innerHTML = `<div class="answer-box text-danger">오류: ${escHtml(e.message)}</div>`;
-  }
+  ansEl.innerHTML = renderThinking('계획 수립', `"${q.slice(0, 60)}"`);;
+
+  runStreamQuery(
+    q,
+    ansEl,
+    (result) => {
+      if (result.status === 'success') {
+        ansEl.innerHTML = `<div class="answer-box">
+          <div class="answer-status text-success">✓ 답변 완료</div>
+          <div class="answer-text">${escHtml(result.answer)}</div>
+        </div>`;
+      } else {
+        ansEl.innerHTML = `<div class="answer-box">
+          <div class="answer-status text-danger">✕ ${escHtml(result.reason || '실패')}</div>
+          <div class="text-dim text-sm">${escHtml(result.detail || '')}</div>
+        </div>`;
+      }
+    },
+    (msg) => {
+      ansEl.innerHTML = `<div class="answer-box text-danger">오류: ${escHtml(msg)}</div>`;
+    },
+  );
 }
 
 function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleSummary(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const collapsed = el.style.webkitLineClamp !== 'unset';
+  if (collapsed) {
+    el.style.webkitLineClamp = 'unset';
+    el.style.display = 'block';
+    btn.textContent = '접기';
+  } else {
+    el.style.display = '-webkit-box';
+    el.style.webkitLineClamp = '3';
+    btn.textContent = '더보기';
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -631,8 +695,8 @@ async function renderViewer(el, params = {}) {
 
   el.innerHTML = `
     <div style="display:flex;gap:20px;height:calc(100vh - var(--header-h) - 56px)">
-      <!-- 좌: 문서 선택 + 섹션 트리 -->
-      <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:16px;overflow:hidden">
+      <!-- 좌: 문서 선택 + 메타데이터 + 섹션 트리 -->
+      <div style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;min-height:0">
         <div class="card" style="flex-shrink:0">
           <div class="form-label">문서 선택</div>
           <select class="input select" id="viewer-job-select" onchange="loadSections(this.value)">
@@ -642,7 +706,8 @@ async function renderViewer(el, params = {}) {
             ).join('')}
           </select>
         </div>
-        <div class="card" style="flex:1;overflow-y:auto;padding:16px">
+        <div id="doc-meta-panel" style="display:none;flex-shrink:0"></div>
+        <div class="card" style="flex:1;min-height:0;overflow-y:auto;padding:16px">
           <div id="section-tree">
             <div class="text-dim text-sm">문서를 선택하면 섹션 목록이 나타납니다</div>
           </div>
@@ -671,12 +736,53 @@ async function renderViewer(el, params = {}) {
 }
 
 async function loadSections(jobId) {
-  if (!jobId) return;
-  const treeEl = document.getElementById('section-tree');
-  treeEl.innerHTML = '<div class="spinner"></div>';
-  try {
-    const sections = await listSections(jobId);
-    State._viewerJobId = jobId;
+  if (!jobId) {
+    document.getElementById('doc-meta-panel').style.display = 'none';
+    document.getElementById('section-tree').innerHTML =
+      '<div class="text-dim text-sm">문서를 선택하면 섹션 목록이 나타납니다</div>';
+    return;
+  }
+  const treeEl    = document.getElementById('section-tree');
+  const metaPanel = document.getElementById('doc-meta-panel');
+  treeEl.innerHTML    = '<div class="spinner"></div>';
+  metaPanel.style.display = 'none';
+
+  // 메타데이터 + 섹션 목록 병렬 로드
+  const [metaResult, sectionsResult] = await Promise.allSettled([
+    getDocMeta(jobId),
+    listSections(jobId),
+  ]);
+
+  // 메타데이터 렌더링
+  if (metaResult.status === 'fulfilled') {
+    const m = metaResult.value;
+    const kwHtml = (m.keywords || []).length
+      ? m.keywords.map(k => `<span class="kw-tag">${escHtml(k)}</span>`).join('')
+      : '<span class="text-dim text-sm">—</span>';
+    const summaryId = `meta-summary-${jobId}`;
+    const summaryHtml = m.summary
+      ? `<div id="${summaryId}" style="line-height:1.5;color:var(--text-dim);overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${escHtml(m.summary)}</div>
+         <button class="btn btn-sm" style="margin-top:4px;padding:2px 6px;font-size:11px" onclick="toggleSummary('${summaryId}',this)">더보기</button>`
+      : '<span class="text-dim">—</span>';
+    metaPanel.innerHTML = `
+      <div class="card" style="padding:12px;font-size:12px;max-height:220px;overflow-y:auto">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--text-dim);text-transform:uppercase;margin-bottom:8px">문서 정보</div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${m.domain_category ? `<span class="badge badge-completed" style="font-size:11px">${escHtml(m.domain_category)}</span>` : ''}
+            ${m.doc_type       ? `<span class="badge badge-pending"    style="font-size:11px">${escHtml(m.doc_type)}</span>`       : ''}
+          </div>
+          <div>${summaryHtml}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:3px">${kwHtml}</div>
+        </div>
+      </div>`;
+    metaPanel.style.display = 'block';
+  }
+
+  // 섹션 트리 렌더링
+  State._viewerJobId = jobId;
+  if (sectionsResult.status === 'fulfilled') {
+    const sections = sectionsResult.value;
     State._viewerSections = sections;
     treeEl.innerHTML = sections.map(s => `
       <div class="section-item" data-seq="${s.seq}" onclick="loadSectionDetail(${s.seq})">
@@ -685,8 +791,8 @@ async function loadSections(jobId) {
         <span class="section-badge">${s.block_count}</span>
       </div>
     `).join('') || '<div class="text-dim text-sm">섹션이 없습니다</div>';
-  } catch(e) {
-    treeEl.innerHTML = `<div class="text-danger text-sm">${escHtml(e.message)}</div>`;
+  } else {
+    treeEl.innerHTML = `<div class="text-danger text-sm">${escHtml(sectionsResult.reason?.message || '로드 실패')}</div>`;
   }
 }
 
@@ -775,7 +881,6 @@ function renderQuery(el) {
         <div class="card-title">⊙ 검색 질의 (RAG)</div>
         <div class="text-dim text-sm mb-16">
           업로드된 문서 기반으로 Multi-Agent가 검색·분석·작성합니다.
-          Planner → Retriever → Aggregator → Writer → Supervisor 파이프라인을 거칩니다.
         </div>
         <div class="query-box">
           <textarea id="main-query" placeholder="질문을 입력하세요&#10;예: 재난 관리 체계에서 중앙정부의 역할은 무엇인가?"
@@ -837,69 +942,68 @@ function replayQuery(idx) {
   document.getElementById('main-query').value = item.query;
 }
 
-async function submitQuery() {
+let _queryCtrl = null;  // 현재 실행 중인 스트림 AbortController
+
+function submitQuery() {
   const q = document.getElementById('main-query').value.trim();
   if (!q) return toast('질의를 입력하세요', 'error');
 
-  const resultEl  = document.getElementById('query-result');
-  const btn       = document.getElementById('query-btn');
-  btn.disabled    = true;
+  // 이전 실행 취소
+  if (_queryCtrl) { _queryCtrl.abort(); _queryCtrl = null; }
+
+  const resultEl = document.getElementById('query-result');
+  const btn      = document.getElementById('query-btn');
+  btn.disabled   = true;
   resultEl.style.display = 'block';
-  resultEl.innerHTML = `
-    <div class="answer-box">
-      <div class="answer-status"><div class="spinner"></div> Multi-Agent 파이프라인 실행 중...</div>
-      <div class="text-dim text-sm" style="margin-top:8px">
-        Planner → Retriever → Aggregator → Writer → Supervisor
-      </div>
-    </div>
-  `;
 
-  const startTime = Date.now();
-  try {
-    const result = await queryRetriever(q);
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  // 초기 진행 표시
+  resultEl.innerHTML = `<div class="answer-box" id="stream-box">${renderThinking('계획 수립', `"${q.slice(0, 60)}"`)}</div>`;
+  const streamBox = document.getElementById('stream-box');
 
-    saveHistory({ query: q, status: result.status, time: new Date().toISOString() });
+  _queryCtrl = runStreamQuery(
+    q,
+    streamBox,
+    (result, elapsed) => {
+      _queryCtrl = null;
+      btn.disabled = false;
+      saveHistory({ query: q, status: result.status, time: new Date().toISOString() });
 
-    if (result.status === 'success') {
-      resultEl.innerHTML = `
-        <div class="answer-box">
-          <div class="answer-status">
-            <span class="text-success">✓ 답변 완료</span>
-            <span class="text-dim text-sm" style="margin-left:auto">${elapsed}초 소요</span>
-          </div>
-          <div class="answer-text">${escHtml(result.answer)}</div>
-          ${result.sources && result.sources.length ? `
-            <div class="sources-list">
-              <div class="sources-title">📎 출처 (${result.sources.length})</div>
-              ${result.sources.map(s => `<div class="source-item">• ${escHtml(s)}</div>`).join('')}
-            </div>` : ''}
-        </div>
-      `;
-    } else {
-      resultEl.innerHTML = `
-        <div class="answer-box">
-          <div class="answer-status text-danger">✕ ${escHtml(result.reason || '검색 실패')}</div>
-          <div class="text-dim text-sm">${escHtml(result.detail || '')}</div>
-          ${result.partial_result ? `
-            <hr class="divider">
-            <div class="card-title" style="font-size:13px;color:var(--warning)">⚠ 부분 결과</div>
-            <div class="answer-text">${escHtml(result.partial_result)}</div>
-          ` : ''}
-        </div>
-      `;
-    }
+      if (result.status === 'success') {
+        resultEl.innerHTML = `
+          <div class="answer-box">
+            <div class="answer-status">
+              <span class="text-success">✓ 답변 완료</span>
+              <span class="text-dim text-sm" style="margin-left:auto">${elapsed}초 소요</span>
+            </div>
+            <div class="answer-text">${escHtml(result.answer)}</div>
+            ${result.sources && result.sources.length ? `
+              <div class="sources-list">
+                <div class="sources-title">📎 출처 (${result.sources.length})</div>
+                ${result.sources.map(s => `<div class="source-item">• ${escHtml(s)}</div>`).join('')}
+              </div>` : ''}
+          </div>`;
+      } else {
+        resultEl.innerHTML = `
+          <div class="answer-box">
+            <div class="answer-status text-danger">✕ ${escHtml(result.reason || '검색 실패')}</div>
+            <div class="text-dim text-sm">${escHtml(result.detail || '')}</div>
+            ${result.partial_result ? `
+              <hr class="divider">
+              <div class="card-title" style="font-size:13px;color:var(--warning)">⚠ 부분 결과</div>
+              <div class="answer-text">${escHtml(result.partial_result)}</div>` : ''}
+          </div>`;
+      }
 
-    // 히스토리 갱신
-    const histEl = document.getElementById('query-history');
-    if (histEl) histEl.innerHTML = renderQueryHistory();
-
-  } catch(e) {
-    resultEl.innerHTML = `<div class="answer-box text-danger">오류: ${escHtml(e.message)}</div>`;
-    toast(e.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
+      const histEl = document.getElementById('query-history');
+      if (histEl) histEl.innerHTML = renderQueryHistory();
+    },
+    (msg) => {
+      _queryCtrl = null;
+      btn.disabled = false;
+      resultEl.innerHTML = `<div class="answer-box text-danger">오류: ${escHtml(msg)}</div>`;
+      toast(msg, 'error');
+    },
+  );
 }
 
 function clearQuery() {

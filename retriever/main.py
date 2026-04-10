@@ -7,10 +7,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-)
+_PARSER_DIR = str(Path(__file__).parent.parent / "parser")
+if _PARSER_DIR not in sys.path:
+    sys.path.insert(0, _PARSER_DIR)
+
+from log_config import setup_logging
+
+setup_logging()
 
 # 에이전트 응답 로그는 항상 출력 (verbose 무관)
 _agent_logger = logging.getLogger("retriever.agents")

@@ -1,7 +1,10 @@
 """Workflow 진입점 - 중단/재개 가능한 Document Parser Pipeline"""
+import logging
 from pathlib import Path
 
 from . import job_store, runner
+
+logger = logging.getLogger(__name__)
 
 
 def run(file_path: str | Path) -> dict:
@@ -22,7 +25,7 @@ def run(file_path: str | Path) -> dict:
 
     job_store.init_schema()
     job_id = job_store.get_or_create_job(source)
-    print(f"[JOB ] job_id={job_id}")
+    logger.info("[JOB] job_id=%s", job_id)
 
     return runner.run(job_id, str(source))
 

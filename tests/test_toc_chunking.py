@@ -16,8 +16,10 @@ from openai import OpenAI
 from scipy import stats
 
 # ── 설정 ──
-PARSED_MD_PATH = "/home/atech/Projects/smart-agent/tests/parsed_output.md"
-DOCUMENT_TYPE_PATH = "/home/atech/Projects/smart-agent/document_type.md"
+from pathlib import Path
+_ROOT = Path(__file__).parent.parent
+PARSED_MD_PATH = str(_ROOT / "tests" / "parsed_output.md")
+DOCUMENT_TYPE_PATH = str(_ROOT / "document_type.md")
 EMBEDDING_URL = "http://112.163.62.170:8032/v1"
 EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 LLM_URL = "http://112.163.62.170:8012/v1"

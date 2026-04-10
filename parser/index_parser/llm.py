@@ -14,13 +14,29 @@ _client = OpenAI(base_url=LLM_URL, api_key=LLM_API_KEY)
 
 # ── document_type.md 파싱 ────────────────────────────────
 
-def _load_doc_types(path: str = "/home/atech/Projects/smart-agent/document_type.md") -> dict[str, dict]:
-    """document_type.md를 파싱하여 {소분류명: {category, structure}} 반환."""
+_DEFAULT_DOC_TYPE_PATH = str(Path(__file__).parent.parent.parent / "document_type.md")
+
+def _load_doc_types(path: str = _DEFAULT_DOC_TYPE_PATH) -> dict[str, dict]:
+    """document_type.md를 파싱하여 {소분류명: {category, structure, features}} 반환."""
     doc_types: dict[str, dict] = {}
     current_category = ""
     current_subtype = ""
     structure_lines: list[str] = []
+    feature_lines: list[str] = []
     in_structure = False
+    in_features = False
+
+    def _flush(name: str) -> None:
+        if not name:
+            return
+        if structure_lines:
+            doc_types[name]["structure"] = " → ".join(
+                s.strip().lstrip("- ") for s in structure_lines if s.strip().startswith("-")
+            )
+        if feature_lines:
+            doc_types[name]["features"] = ", ".join(
+                s.strip().lstrip("- ") for s in feature_lines if s.strip().startswith("-")
+            )
 
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -29,38 +45,56 @@ def _load_doc_types(path: str = "/home/atech/Projects/smart-agent/document_type.
             m3 = re.match(r"^### [\d\-]+\.\s+(.+)", line)
 
             if m2:
+                _flush(current_subtype)
                 current_category = m2.group(1).strip()
                 current_subtype = ""
+                structure_lines = []
+                feature_lines = []
                 in_structure = False
+                in_features = False
             elif m3:
-                if current_subtype and structure_lines:
-                    doc_types[current_subtype]["structure"] = " → ".join(
-                        s.strip().lstrip("- ") for s in structure_lines if s.strip().startswith("-")
-                    )
+                _flush(current_subtype)
                 current_subtype = m3.group(1).strip()
                 structure_lines = []
+                feature_lines = []
                 in_structure = False
-                doc_types[current_subtype] = {"category": current_category, "structure": ""}
+                in_features = False
+                doc_types[current_subtype] = {"category": current_category, "structure": "", "features": ""}
             elif current_subtype:
-                if line.strip() == "- 구조":
+                stripped = line.strip()
+                if stripped.startswith("- 구조"):
                     in_structure = True
+                    in_features = False
+                elif stripped.startswith("- 특징"):
+                    in_features = True
+                    in_structure = False
+                elif stripped.startswith("- 포맷"):
+                    in_structure = False
+                    in_features = False
                 elif in_structure and line.startswith("    -"):
                     structure_lines.append(line)
-                elif line.startswith("- ") and line.strip() != "- 구조":
+                elif in_features and line.startswith("    -"):
+                    feature_lines.append(line)
+                elif stripped.startswith("- "):
                     in_structure = False
+                    in_features = False
 
-    # 마지막 항목 처리
-    if current_subtype and structure_lines:
-        doc_types[current_subtype]["structure"] = " → ".join(
-            s.strip().lstrip("- ") for s in structure_lines if s.strip().startswith("-")
-        )
-
+    _flush(current_subtype)
     return doc_types
 
 
 DOC_TYPES = _load_doc_types()
 DOC_TYPE_LIST = "\n".join(
-    f"- {name} ({info['category']})" for name, info in DOC_TYPES.items()
+    "- {name} ({cat}){detail}".format(
+        name=name,
+        cat=info["category"],
+        detail=(
+            ": 구조=[{s}], 특징=[{f}]".format(s=info["structure"], f=info["features"])
+            if info.get("structure") or info.get("features")
+            else ""
+        ),
+    )
+    for name, info in DOC_TYPES.items()
 )
 
 
@@ -89,7 +123,15 @@ def classify_doc_type(text_preview: str) -> str:
     valid_types = list(DOC_TYPES.keys())
 
     result = _chat(
-        "문서 분류 전문가입니다. 반드시 아래 목록에 있는 소분류명 그대로 JSON으로만 답하세요. 목록에 없는 값은 절대 사용하지 마세요.",
+        (
+            "문서 분류 전문가입니다. 반드시 아래 목록에 있는 소분류명 그대로 JSON으로만 답하세요. "
+            "목록에 없는 값은 절대 사용하지 마세요. "
+            "혼동 주의: "
+            "논문은 Abstract/초록·References/참고문헌·IMRAD 구조(서론·방법·결과·고찰) 포함. "
+            "보고서(행정/업무)는 기관 내부 보고용이며 Abstract·References 없음. "
+            "연구보고서는 연구기관·정부기관 발간, 연구책임자·과제번호 명시. "
+            "리포트(학술/분석)는 학과 과제·실습 제출물."
+        ),
         f"""[문서 유형 목록 (이 중에서만 선택)]
 {DOC_TYPE_LIST}
 
@@ -156,6 +198,7 @@ def extract_toc(text: str) -> dict:
 3. level: 1=장/대분류/Chapter, 2=절/중분류/Section, 3=항/소분류/Subsection
 4. page: 목차에 페이지 번호가 있으면 숫자, 없으면 null
 5. 번호(1., 1.1, 제1장, Chapter 1 등) 포함하여 title에 기록
+6. References/참고문헌/Bibliography 섹션 자체(예: "References")는 TOC 항목으로 추출하되, 해당 섹션 내부의 개별 인용 항목(예: "1. Smith, J. et al. ...", "[1] Author..." 형태의 참고문헌 목록)은 TOC 항목이 아니므로 절대 포함하지 마세요.
 
 JSON으로만 답하세요:
 {{
@@ -193,7 +236,7 @@ JSON으로만 답하세요:
             {"role": "system", "content": "문서 구조 분석 전문가입니다. 문서에서 목차를 찾아 계층 구조 JSON으로만 답하세요."},
             {"role": "user", "content": prompt_user},
         ],
-        max_tokens=2048,
+        max_tokens=4096,
         temperature=0.0,
     )
     result = resp.choices[0].message.content.strip()

@@ -221,7 +221,7 @@ def analyze():
         ax.set_title('Paragraph Embedding Similarity (Docling parsed)\nblue = section boundary')
         plt.tight_layout()
 
-        output_path = "/home/atech/Projects/smart-agent/similarity_heatmap_docling.png"
+        output_path = str(Path(__file__).parent / "similarity_heatmap_docling.png")
         plt.savefig(output_path, dpi=150)
         print(f"\n히트맵 저장: {output_path}")
         plt.close()

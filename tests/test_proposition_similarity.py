@@ -290,7 +290,7 @@ def analyze():
                      fontsize=13, fontweight='bold', y=1.01)
         plt.tight_layout()
 
-        output_path = "/home/atech/Projects/smart-agent/proposition_similarity_test.png"
+        output_path = str(Path(__file__).parent / "proposition_similarity_test.png")
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         print(f"\n시각화 저장: {output_path}")
         plt.close()

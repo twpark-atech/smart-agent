@@ -284,6 +284,41 @@ def reset_step(job_id: str, body: ResetRequest):
     return {"job_id": job_id, "reset_step": body.step, "message": "다음 run 시 해당 step부터 재실행됩니다"}
 
 
+@router.get("/jobs/{job_id}/meta", summary="문서 메타데이터 조회")
+def get_document_meta(job_id: str):
+    """문서의 도메인 카테고리, 문서 타입, 요약, 키워드를 반환합니다."""
+    parser_db.init_schema()
+    try:
+        with parser_db.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT doc_type, domain_category, summary, keywords "
+                    "FROM parser_documents WHERE document_id = %s",
+                    (job_id,),
+                )
+                row = cur.fetchone()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"문서 없음 (job_id='{job_id}')")
+
+    doc_type, domain_category, summary, keywords = row
+    if isinstance(keywords, str):
+        try:
+            keywords = json.loads(keywords)
+        except Exception:
+            keywords = []
+
+    return {
+        "job_id": job_id,
+        "doc_type": doc_type or "",
+        "domain_category": domain_category or "",
+        "summary": summary or "",
+        "keywords": keywords or [],
+    }
+
+
 @router.get("/jobs/{job_id}/sections", summary="섹션 목록 조회")
 def list_sections(job_id: str):
     """파싱 완료된 문서의 섹션 목록(seq, level, title, block 수)을 반환합니다."""

@@ -7,10 +7,13 @@
 - pending/없음 → 최초 실행
 - cancelled  → 다음 step 실행 전 감지하여 중단
 """
+import logging
 import traceback
 from pathlib import Path
 
 from . import job_store
+
+logger = logging.getLogger(__name__)
 
 
 class JobCancelledError(Exception):
@@ -78,31 +81,31 @@ def run(job_id: str, source_path: str) -> dict:
     for step_name, step_fn in STEPS:
         # 취소 요청 확인 (step 시작 전)
         if job_store.is_cancelled(job_id):
-            print(f"[CANCELLED] job={job_id}, 중단 위치={step_name} 이전")
+            logger.info("[CANCELLED] job=%s, 중단 위치=%s 이전", job_id, step_name)
             raise JobCancelledError(f"job '{job_id}' 취소됨")
 
         row = job_store.get_step(job_id, step_name)
 
         if row and row["status"] == job_store.STATUS_COMPLETED:
             # 이미 완료 → DB 결과 재사용
-            print(f"[SKIP] {step_name} (already completed)")
+            logger.info("[SKIP] %s", step_name)
             context[step_name] = row["result"] or {}
             continue
 
         # 미완료(없음 / running / failed) → 실행
-        print(f"[RUN ] {step_name}")
+        logger.info("[RUN] %s", step_name)
         job_store.step_start(job_id, step_name)
         try:
             result = step_fn(context)
             job_store.step_complete(job_id, step_name, result)
             context[step_name] = result
-            print(f"[DONE] {step_name}")
+            logger.info("[DONE] %s", step_name)
         except JobCancelledError:
             raise
         except Exception as e:
             error_msg = traceback.format_exc()
             job_store.step_fail(job_id, step_name, error_msg)
-            print(f"[FAIL] {step_name}: {e}")
+            logger.error("[FAIL] %s: %s", step_name, e)
             raise
 
     job_store.job_complete(job_id)

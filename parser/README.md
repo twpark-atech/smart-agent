@@ -189,6 +189,19 @@ python main.py reset ./report.pdf index_parser
 | TOC 추출 모델 | `Qwen2.5-3B-Instruct` | `Qwen3-VL-32B-Instruct-AWQ` (대형 모델) |
 | 토큰 계산 | 한글 기준 고정 | 언어 비율 감지 후 분기 (영어: 단어 수 × 1.3) |
 
+### document_integrator `doc_name` 추출 로직 개선
+
+`document_integrator/__init__.py`의 `_extract_doc_name()` 수정.
+
+**문제**: 섹션 경로의 최상위 세그먼트를 그대로 `doc_name`으로 사용하다 보니 "문서 헤더", "헤더", "개요" 등 generic한 이름이 인덱싱되어 제목 기반 검색 품질이 저하됐습니다.
+
+| 항목 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| 추출 방식 | 첫 번째 섹션의 최상위 경로 무조건 사용 | generic 이름(`_GENERIC_SECTION_NAMES`) 제외 후, 실제 제목으로 보이는 첫 번째 섹션명 사용 |
+| 폴백 | 섹션 없을 때만 파일명 | generic 이름만 있는 경우에도 파일명으로 폴백 |
+
+**제외 목록 예시**: `문서 헤더`, `헤더`, `개요`, `서론`, `목차`, `서문`, `소개`, `본문`, `introduction`, `header`, `overview`, `preface`, `contents`
+
 ### OpenSearch Korean Analyzer 개선 (한국어 + 영어 혼합 지원)
 
 `section_parser/opensearch.py`, `document_integrator/opensearch.py` 의 `korean` analyzer 필터 파이프라인 변경.

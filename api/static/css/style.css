@@ -523,6 +523,52 @@ tr:hover td { background: rgba(91,110,245,.04); }
 .text-danger  { color: var(--danger); }
 .text-info    { color: var(--info); }
 
+/* ── 에이전트 진행 표시 ── */
+.agent-thinking {
+  padding: 16px 20px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.thinking-pulse {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .4; transform: scale(.7); }
+}
+
+.thinking-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary-h);
+  letter-spacing: .02em;
+}
+
+.thinking-message {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 4.5em;
+  overflow: hidden;
+}
+
 /* 반응형 (간소) */
 @media (max-width: 900px) {
   :root { --sidebar-w: 56px; }

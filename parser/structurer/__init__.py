@@ -3,6 +3,52 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+# 논문·보고서 등에서 자주 나타나는 섹션 헤딩 패턴
+_HEADING_RE = re.compile(
+    r"^("
+    r"\d+\.(?:\d+\.)*\s+\S"                                         # 1. xxx, 1.1. xxx
+    r"|\d+\)\s+\S"                                                    # 1) xxx
+    r"|[IVXLC]+\.\s+\S"                                              # I. Introduction
+    r"|제\s*\d+\s*[장절항편]"                                          # 제1장, 제2절
+    r"|Chapter\s+\d"                                                  # Chapter 1
+    r"|(?:Abstract|초록|요약|서론|결론|서문|부록|Appendix)$"
+    r"|(?:Acknowledgments?|감사의\s*글?)$"
+    r"|(?:References?|참고\s*문헌|Bibliography)$"
+    r"|(?:Introduction|Conclusions?|Methods?|Results?|Discussion|Background)$"
+    r"|(?:Related\s+Work|Experiments?|Evaluation|Future\s+Work)$"
+    r")",
+    re.IGNORECASE,
+)
+
+# References/Bibliography 섹션 헤딩 감지 (컨텍스트 추적용)
+# search() 사용: "References", "5. References", "References 목록" 등 모든 형태 감지
+_BIBLIO_SECTION_RE = re.compile(
+    r"(?:References?|참고\s*문헌|Bibliography)", re.IGNORECASE
+)
+
+# 참고문헌 목록 개별 항목 패턴
+# - 1. xxx, 2405.21060. xxx (arXiv ID 포함: \d+\.(\d+\.)*\s+)
+# - [1] xxx
+_BIBLIO_ITEM_RE = re.compile(
+    r"^\d+\.(?:\d+\.)*\s+\S|^\[\d+\]\s+\S"
+)
+
+# Bibliography 모드를 해제하는 명시적 구조적 헤딩 (번호 없는 고정 키워드 / 장절)
+# 이 패턴에 해당해야만 bibliography 모드가 해제됨
+_BIBLIO_RESET_RE = re.compile(
+    r"^(?:"
+    r"Abstract|초록|요약|서론|결론|서문|부록|Appendix"
+    r"|Acknowledgments?|감사의\s*글?"
+    r"|Introduction|Conclusions?|Methods?|Results?|Discussion|Background"
+    r"|Related\s+Work|Experiments?|Evaluation|Future\s+Work"
+    r"|제\s*\d+\s*[장절항편]|Chapter\s+\d"
+    r")$",
+    re.IGNORECASE,
+)
+
+# TOC에서 참고문헌 항목 제거: URL/doi/arXiv 포함 항목 및 [숫자] 형식
+_BIBLIO_TOC_URL_RE = re.compile(r"arXiv:|doi\.org|https?://", re.IGNORECASE)
+
 from .models import Section, StructuredDocument
 from .llm import classify_domain
 
@@ -29,13 +75,15 @@ def run(job_id: str, format_result: dict, index_result: dict) -> StructuredDocum
     blocks: list[dict] = format_result.get("parsed", {}).get("blocks", [])
     minio: dict = format_result.get("minio", {})
 
+    toc_found: bool = index_result.get("toc_found", False)
+
     # 섹션 분리
     if ext == ".docx" and original_path:
         sections = _split_docx(original_path, toc, blocks)
     elif ext == ".pptx" and original_path:
         sections = _split_pptx(blocks)
     else:
-        sections = _split_by_toc(toc, blocks)
+        sections = _split_by_toc(toc, blocks, toc_found)
 
     # 도메인 분류 (문서 전체 기준)
     preview = "\n\n".join(
@@ -191,13 +239,36 @@ def _split_pptx(blocks: list[dict]) -> list[Section]:
 
 # ── TOC 텍스트 매칭 분리 (폴백) ───────────────────────────
 
-def _split_by_toc(toc: list[dict], blocks: list[dict]) -> list[Section]:
-    """TOC 타이틀과 블록 첫 줄 매칭으로 섹션 분리."""
+def _split_by_toc(
+    toc: list[dict], blocks: list[dict], toc_found: bool = True
+) -> list[Section]:
+    """TOC 타이틀과 블록 첫 줄 매칭으로 섹션 분리.
+
+    toc_found=False(문서 유형 구조에서 추론된 TOC)이면 텍스트 정확 매칭 대신
+    실제 헤딩 감지 → 균등 분배 순으로 폴백한다.
+    """
     if not toc:
         return [Section(title="전체", level=1, section_path="전체",
                         domain_category="", blocks=blocks)]
 
+    if not toc_found:
+        # 추론된 구조: 실제 문서 헤딩 감지 시도
+        sections = _split_by_heading_detection(blocks)
+        if sections:
+            return sections
+        # 헤딩 미감지 → 인페이지 구조에 맞춰 균등 분배
+        return _split_proportionally(_flatten_toc(toc), blocks)
+
+    # toc_found=True: 원문 목차 존재 → 텍스트 매칭
     flat_toc = _flatten_toc(toc)
+    # LLM이 참고문헌 개별 항목을 TOC에 잘못 포함시킨 경우 필터링
+    # - [1] xxx 형식 또는 URL/doi/arXiv 포함 항목 제거
+    # - 1. xxx 형식은 실제 섹션 번호와 구분 불가하므로 URL 포함 여부로만 판단
+    flat_toc = [
+        t for t in flat_toc
+        if not _BIBLIO_TOC_URL_RE.search(t["title"].strip())
+        and not re.match(r"^\[\d+\]\s+\S", t["title"].strip())
+    ]
     toc_map = {_normalize(t["title"]): t for t in flat_toc}
 
     sections: list[Section] = []
@@ -228,6 +299,110 @@ def _split_by_toc(toc: list[dict], blocks: list[dict]) -> list[Section]:
         sections.insert(0, Section(
             title="문서 헤더", level=0, section_path="문서 헤더",
             domain_category="", blocks=unmatched,
+        ))
+    return sections
+
+
+def _split_by_heading_detection(blocks: list[dict]) -> list[Section]:
+    """블록 내 라인 단위로 헤딩 패턴을 감지하여 섹션 분리.
+
+    헤딩이 2개 미만이면 빈 리스트를 반환(폴백 신호).
+    """
+    # 모든 텍스트 라인 + 비텍스트 블록을 순서 보존 이벤트로 변환
+    events: list[dict] = []
+    for block in blocks:
+        if block.get("block_type") == "text":
+            page = block.get("page", 0)
+            for line in block["content"].splitlines():
+                stripped = line.strip()
+                kind = "heading" if stripped and _HEADING_RE.match(stripped) else "line"
+                events.append({"kind": kind, "content": line, "stripped": stripped, "page": page})
+        else:
+            events.append({"kind": "block", "block": block})
+
+    # References/Bibliography 섹션 이후의 항목은 본문으로 처리
+    # - _BIBLIO_SECTION_RE.search(): "References", "5. References" 등 모든 형태 감지
+    # - bibliography 모드 해제는 _BIBLIO_RESET_RE(명시적 구조 헤딩)에 해당할 때만
+    # - 그 외 모든 헤딩(번호형 arXiv ID 포함)은 본문으로 강등
+    in_bibliography = False
+    for ev in events:
+        if ev["kind"] != "heading":
+            continue
+        stripped = ev.get("stripped", "")
+        if _BIBLIO_SECTION_RE.search(stripped):
+            in_bibliography = True
+        elif in_bibliography:
+            if _BIBLIO_RESET_RE.match(stripped):
+                in_bibliography = False  # 명시적 구조 헤딩 → 모드 해제, 헤딩 유지
+            else:
+                ev["kind"] = "line"  # 그 외 모든 항목 → 본문으로 강등
+
+    heading_indices = [i for i, ev in enumerate(events) if ev["kind"] == "heading"]
+    if len(heading_indices) < 2:
+        return []
+
+    def _build_section(title: str, page: int | None, ev_slice: list[dict]) -> Section:
+        text_lines = [ev["content"] for ev in ev_slice
+                      if ev["kind"] in ("line", "heading") and ev.get("stripped")]
+        extra_blocks = [ev["block"] for ev in ev_slice if ev["kind"] == "block"]
+        sec_blocks: list[dict] = []
+        if text_lines:
+            sec_blocks.append({
+                "block_type": "text", "content": "\n".join(text_lines),
+                "page": page, "bbox": None, "minio_key": None, "table_json": None,
+            })
+        sec_blocks.extend(extra_blocks)
+        return Section(title=title, level=1, section_path=title,
+                       domain_category="", blocks=sec_blocks)
+
+    sections: list[Section] = []
+
+    # 첫 헤딩 이전 → 문서 헤더
+    pre = events[:heading_indices[0]]
+    if pre:
+        pre_text = "\n".join(ev["content"] for ev in pre
+                             if ev["kind"] in ("line", "heading") and ev.get("stripped"))
+        pre_extra = [ev["block"] for ev in pre if ev["kind"] == "block"]
+        header_blocks: list[dict] = []
+        if pre_text.strip():
+            header_blocks.append({
+                "block_type": "text", "content": pre_text,
+                "page": pre[0].get("page"), "bbox": None, "minio_key": None, "table_json": None,
+            })
+        header_blocks.extend(pre_extra)
+        if header_blocks:
+            sections.append(Section(
+                title="문서 헤더", level=0, section_path="문서 헤더",
+                domain_category="", blocks=header_blocks,
+            ))
+
+    for k, h_idx in enumerate(heading_indices):
+        h_ev = events[h_idx]
+        end = heading_indices[k + 1] if k + 1 < len(heading_indices) else len(events)
+        body = events[h_idx + 1:end]
+        sections.append(_build_section(h_ev["stripped"], h_ev.get("page"), body))
+
+    return sections
+
+
+def _split_proportionally(flat_toc: list[dict], blocks: list[dict]) -> list[Section]:
+    """헤딩을 감지할 수 없을 때 블록을 섹션 수에 맞춰 균등 분배."""
+    if not flat_toc:
+        return [Section(title="전체", level=1, section_path="전체",
+                        domain_category="", blocks=blocks)]
+    n, m = len(flat_toc), len(blocks)
+    if m == 0:
+        return [Section(title=t["title"], level=t["level"], section_path=t["section_path"],
+                        domain_category="", blocks=[]) for t in flat_toc]
+    size = max(1, m // n)
+    sections = []
+    for i, t in enumerate(flat_toc):
+        start = i * size
+        end = start + size if i < n - 1 else m
+        sections.append(Section(
+            title=t["title"], level=t["level"],
+            section_path=t["section_path"], domain_category="",
+            blocks=blocks[start:end],
         ))
     return sections
 

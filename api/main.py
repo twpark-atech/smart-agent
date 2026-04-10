@@ -12,6 +12,7 @@ Document Parser Workflow + Retrieval Multi-Agent를 단일 FastAPI 서버로 노
 UI:      http://localhost:8000/ui
 Swagger: http://localhost:8000/docs
 """
+import logging
 import sys
 from pathlib import Path
 
@@ -26,6 +27,10 @@ for _p in (_API_DIR, _ROOT / "parser", _ROOT / "retriever"):
     _ps = str(_p)
     if _ps not in sys.path:
         sys.path.insert(0, _ps)
+
+from log_config import setup_logging
+
+setup_logging(suppress_access_log=True)
 
 from routers.parser import router as parser_router
 from routers.retriever import router as retriever_router
