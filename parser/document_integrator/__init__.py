@@ -33,6 +33,10 @@ def run(job_id: str, structurer_result: dict) -> dict:
     # PostgreSQL에서 섹션별 명제+키워드 로드
     propositions_by_section = _load_propositions(job_id)
 
+    # xlsx/csv 등 명제가 없는 경우 테이블 데이터에서 가상 명제 생성
+    if not propositions_by_section:
+        propositions_by_section = _load_from_tables(job_id)
+
     if not propositions_by_section:
         return {"summary": "", "keywords": [], "embedding_dim": 0, "opensearch_indexed": False}
 
@@ -99,6 +103,64 @@ def _load_propositions(document_id: str) -> list[dict]:
                 }
                 for row in cur.fetchall()
             ]
+
+
+def _load_from_tables(document_id: str) -> list[dict]:
+    """명제가 없는 경우(xlsx/csv) parser_tables + parser_table_rows에서 가상 명제 생성."""
+    import db
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT t.id, t.sheet_name, t.headers, t.row_count, t.table_index
+                FROM parser_tables t
+                WHERE t.document_id = %s
+                ORDER BY t.table_index
+                """,
+                (document_id,),
+            )
+            tables = cur.fetchall()
+
+    if not tables:
+        return []
+
+    result = []
+    import db, json as _json
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            for table_id, sheet_name, headers_json, row_count, table_index in tables:
+                headers = headers_json if isinstance(headers_json, list) else _json.loads(headers_json)
+
+                # 상위 5행 샘플
+                cur.execute(
+                    """
+                    SELECT row_data FROM parser_table_rows
+                    WHERE table_id = %s ORDER BY row_index LIMIT 5
+                    """,
+                    (table_id,),
+                )
+                sample_rows = [r[0] for r in cur.fetchall()]
+
+                sheet_label = sheet_name or f"테이블{(table_index or 0) + 1}"
+                propositions = [
+                    f"컬럼: {', '.join(headers)}",
+                    f"총 {row_count}개 행",
+                ]
+                for i, row in enumerate(sample_rows):
+                    row_dict = row if isinstance(row, dict) else _json.loads(row)
+                    propositions.append(
+                        f"샘플 행{i + 1}: " + ", ".join(
+                            f"{k}={v}" for k, v in list(row_dict.items())[:5]
+                        )
+                    )
+
+                result.append({
+                    "section_path": f"{sheet_label} > 테이블{(table_index or 0) + 1}",
+                    "propositions": propositions,
+                    "keywords": headers,
+                })
+
+    return result
 
 
 def _update_document(document_id: str, summary: str, keywords: list[str]) -> None:

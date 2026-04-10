@@ -78,7 +78,9 @@ def run(job_id: str, format_result: dict, index_result: dict) -> StructuredDocum
     toc_found: bool = index_result.get("toc_found", False)
 
     # 섹션 분리
-    if ext == ".docx" and original_path:
+    if ext in (".csv", ".xlsx"):
+        sections = _split_tabular(blocks, toc)
+    elif ext == ".docx" and original_path:
         sections = _split_docx(original_path, toc, blocks)
     elif ext == ".pptx" and original_path:
         sections = _split_pptx(blocks)
@@ -212,6 +214,33 @@ def _split_docx(
     return sections if sections else [Section(
         title="전체", level=1, section_path="전체", domain_category="", blocks=[]
     )]
+
+
+# ── CSV / XLSX 분리 ───────────────────────────────────────
+
+def _split_tabular(blocks: list[dict], toc: list[dict]) -> list[Section]:
+    """csv/xlsx: table 블록 1개 = 섹션 1개. TOC 제목을 섹션 제목으로 사용."""
+    flat = _flatten_toc(toc)
+    table_blocks = [b for b in blocks if b.get("block_type") == "table"]
+
+    if not table_blocks:
+        return [Section(title="전체", level=1, section_path="전체",
+                        domain_category="", blocks=blocks)]
+
+    sections = []
+    for i, block in enumerate(table_blocks):
+        if i < len(flat):
+            title = flat[i]["title"]
+            section_path = flat[i]["section_path"]
+        else:
+            title = f"시트{i + 1}"
+            section_path = title
+        sections.append(Section(
+            title=title, level=1,
+            section_path=section_path, domain_category="",
+            blocks=[block],
+        ))
+    return sections
 
 
 # ── PPTX 분리 ─────────────────────────────────────────────

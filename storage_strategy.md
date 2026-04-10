@@ -71,3 +71,109 @@
 | 5-4. 히스토리 | 변경 전/후, 작성자, 시간, 이유 | 시간 + 작성자 필터 |
 | 7-3. 체크리스트 | 점검 항목, 기준, 결과, 비고 | 항목 + 결과 필터 |
 | 9-1. 스프레드시트 | 헤더, 데이터 행, 수식/집계 | 컬럼 필터 + 집계 쿼리 |
+
+---
+
+## 3. 스프레드시트 (XLSX / CSV) 파싱 구현
+
+### 3-1. 파싱 파이프라인
+
+```
+XLSX / CSV
+  │
+  ▼
+[1] 병합 셀 확장 (XLSX only)
+  │  openpyxl로 merged_cells 순회
+  │  → 상단 좌측 값을 병합 범위 전체에 fill
+  │
+  ▼
+[2] 테이블 영역 탐지
+  │  완전히 비어 있는 행/열을 경계로 독립 테이블 영역 분리
+  │  → 시트 하나에 테이블이 여러 개일 때(사용자 친화적 파일) 대응
+  │
+  ▼
+[3] 헤더 탐지
+  │  상단 N행이 전부 문자열이고 수직 병합이 있으면 다중 헤더로 판정
+  │  → 컬럼명 충돌 시 "부모.자식" 형태로 flat화
+  │     예) Q1 예산 > 인건비 → "Q1 예산.인건비"
+  │
+  ▼
+[4] JSON 구조화 → PostgreSQL (parser_tables) 저장
+  │
+  ▼
+[5] 테이블 메타 직렬화 → LLM → Summary / Keywords 생성
+     (section_parser 스킵, document_integrator에서 직접 처리)
+```
+
+### 3-2. PostgreSQL 스키마 (`parser_tables`)
+
+```sql
+CREATE TABLE parser_tables (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL,          -- parser_documents 참조
+    sheet_name  TEXT,                   -- XLSX 시트명 / CSV는 파일명
+    region      TEXT,                   -- 테이블 영역 "B2:F20" (XLSX only)
+    header_depth INT DEFAULT 1,         -- 헤더 행 수 (다중 헤더 대응)
+    headers     JSONB,                  -- 헤더 구조 (다중 헤더면 2차원 배열)
+    rows        JSONB,                  -- [{컬럼명: 값, ...}, ...]
+    row_count   INT,
+    description TEXT,                   -- LLM 생성 테이블 설명 (OpenSearch 색인용)
+    seq         INT,                    -- 시트 내 테이블 순서
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX ON parser_tables (document_id);
+CREATE INDEX ON parser_tables USING GIN (rows);
+```
+
+**JSON 예시**
+
+```json
+{
+  "sheet_name": "Q1",
+  "region": "B2:F20",
+  "header_depth": 2,
+  "headers": [
+    ["부서", "부서", "Q1 예산", "Q1 예산", "비고"],
+    ["",     "",     "인건비",  "운영비",  ""   ]
+  ],
+  "rows": [
+    {"부서": "개발팀",   "Q1 예산.인건비": 5000, "Q1 예산.운영비": 1200, "비고": ""},
+    {"부서": "마케팅팀", "Q1 예산.인건비": 3000, "Q1 예산.운영비": 800,  "비고": "증액예정"}
+  ]
+}
+```
+
+### 3-3. Summary / Keywords 생성
+
+섹션-명제 구조 없이 테이블 메타를 직렬화해 LLM에 전달한다.
+
+```
+[시트명 / 테이블 영역] 으로 "가상 섹션" 구성
+propositions:
+  - "컬럼: 부서, Q1 예산.인건비, Q1 예산.운영비, 비고"
+  - "총 {N}개 행, {M}개 시트 포함"
+  - 상위 5행 샘플 요약
+keywords: 컬럼명 목록
+```
+
+`document_integrator._load_propositions()`에서 `parser_propositions`가 비어 있으면
+`parser_tables`를 조회해 위 형태로 변환 후 `generate_summary_and_keywords()`에 전달.
+
+### 3-4. Pipeline Step 처리
+
+| Step | 처리 방식 |
+|---|---|
+| `format_converter` | 변환 없이 원본 경로 그대로 전달 |
+| `index_parser` | LLM 호출 없이 즉시 반환. CSV: `doc_type="스프레드시트"`, TOC=`[데이터]`. XLSX: 시트명 → TOC 항목 |
+| `structurer` | `_split_tabular()` 분기: table 블록 1개 = 섹션 1개. `parser_tables`에 JSON 저장 |
+| `section_parser` | **스킵** (표 데이터는 명제 추출 대상 아님) |
+| `document_integrator` | `parser_tables` 직렬화 → `generate_summary_and_keywords()` → OpenSearch 색인 |
+
+### 3-5. 라이브러리
+
+| 용도 | 라이브러리 |
+|---|---|
+| XLSX 파싱 / 병합 셀 | `openpyxl` |
+| 데이터 정제 | `pandas` |
+| CSV 인코딩 감지 | `chardet` |

@@ -62,7 +62,10 @@ CREATE TABLE IF NOT EXISTS parser_tables (
     page            INT,
     headers         JSONB NOT NULL,         -- ["col1", "col2", ...]
     row_count       INT NOT NULL DEFAULT 0,
-    table_index     INT                     -- 문서 내 표 순서 (0-indexed)
+    table_index     INT,                    -- 문서 내 표 순서 (0-indexed)
+    sheet_name      TEXT,                   -- XLSX 시트명 / CSV 파일명
+    header_depth    INT DEFAULT 1,          -- 다중 헤더 행 수
+    description     TEXT                    -- LLM 생성 표 설명 (OpenSearch 색인용)
 );
 
 CREATE TABLE IF NOT EXISTS parser_table_rows (
@@ -81,9 +84,17 @@ def connect():
     )
 
 
+MIGRATIONS = """
+ALTER TABLE parser_tables ADD COLUMN IF NOT EXISTS sheet_name   TEXT;
+ALTER TABLE parser_tables ADD COLUMN IF NOT EXISTS header_depth INT DEFAULT 1;
+ALTER TABLE parser_tables ADD COLUMN IF NOT EXISTS description  TEXT;
+"""
+
+
 def init_schema() -> None:
     with connect() as conn, conn.cursor() as cur:
         cur.execute(DDL)
+        cur.execute(MIGRATIONS)
         conn.commit()
 
 
@@ -184,6 +195,9 @@ def save_sections(document_id: str, sections: list[dict]) -> None:
                     _insert_table_rows(
                         cur, document_id, block_id, section_id,
                         block.get("page"), table_json, table_index,
+                        sheet_name=block.get("sheet_name") or "",
+                        header_depth=block.get("header_depth") or 1,
+                        description=block.get("description") or "",
                     )
                     table_index += 1
 
@@ -214,6 +228,9 @@ def _insert_table_rows(
     page: int | None,
     table_json: list[dict],
     table_index: int,
+    sheet_name: str = "",
+    header_depth: int = 1,
+    description: str = "",
 ) -> None:
     """표 데이터를 parser_tables / parser_table_rows에 행 단위로 적재."""
     if not table_json:
@@ -224,13 +241,15 @@ def _insert_table_rows(
     cur.execute(
         """
         INSERT INTO parser_tables
-            (document_id, block_id, section_id, page, headers, row_count, table_index)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (document_id, block_id, section_id, page, headers, row_count, table_index,
+             sheet_name, header_depth, description)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
         (document_id, block_id, section_id, page,
          json.dumps(headers, ensure_ascii=False),
-         len(table_json), table_index),
+         len(table_json), table_index,
+         sheet_name, header_depth, description or None),
     )
     table_id = cur.fetchone()[0]
 

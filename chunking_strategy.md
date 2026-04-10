@@ -233,6 +233,7 @@ LLM에 전달되는 컨텍스트:
 | **텍스트** | 위 파이프라인 적용 |
 | **이미지** | VLM으로 Description 생성 → 텍스트와 동일하게 Proposition 추출 및 임베딩. 원본은 MinIO 저장 |
 | **표** | Table Description 생성 → Proposition 추출 및 임베딩. Raw 데이터는 RDB 적재 |
+| **스프레드시트 (XLSX/CSV)** | 병합 셀 확장 → 테이블 영역 탐지 → JSON 구조화 → `parser_tables` 저장. section_parser 스킵. 테이블 메타 직렬화 → LLM → Summary/Keywords. 상세: storage_strategy.md §3 |
 | **수식/화학식** | 텍스트 변환 후 포함. 변환 불가 시 이미지 처리 흐름으로 전환 |
 
 ---

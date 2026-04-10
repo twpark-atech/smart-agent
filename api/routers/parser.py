@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import json
-import importlib.util
 import sys
 from pathlib import Path
 from typing import Optional
@@ -23,14 +22,9 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-# api/config.py를 절대 경로로 로드 (parser/config.py와 이름 충돌 방지)
-_api_config_path = Path(__file__).parent.parent / "config.py"
-_spec = importlib.util.spec_from_file_location("api_config", _api_config_path)
-_api_config = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_api_config)
-UPLOAD_DIR: str = _api_config.UPLOAD_DIR
+from config import UPLOAD_DIR
 
-# parser 모듈 경로 주입
+# parser 모듈 경로 주입 (api/main.py 외부에서 직접 임포트될 경우 대비)
 _PARSER_DIR = Path(__file__).parent.parent.parent / "parser"
 if str(_PARSER_DIR) not in sys.path:
     sys.path.insert(0, str(_PARSER_DIR))

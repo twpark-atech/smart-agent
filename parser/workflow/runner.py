@@ -8,7 +8,6 @@
 - cancelled  → 다음 step 실행 전 감지하여 중단
 """
 import logging
-import traceback
 from pathlib import Path
 
 from . import job_store
@@ -46,6 +45,7 @@ def _step_structurer(context: dict) -> dict:
          "section_path": s["section_path"], "block_count": len(s["blocks"])}
         for s in d["sections"]
     ]
+    d["original_ext"] = context["format_converter"].get("extension", "")
     return d
 
 
@@ -103,9 +103,8 @@ def run(job_id: str, source_path: str) -> dict:
         except JobCancelledError:
             raise
         except Exception as e:
-            error_msg = traceback.format_exc()
-            job_store.step_fail(job_id, step_name, error_msg)
-            logger.error("[FAIL] %s: %s", step_name, e)
+            logger.error("[FAIL] %s: %s", step_name, e, exc_info=True)
+            job_store.step_fail(job_id, step_name, f"{step_name}: {e}")
             raise
 
     job_store.job_complete(job_id)

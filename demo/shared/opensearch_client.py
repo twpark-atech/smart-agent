@@ -2,7 +2,8 @@
 import asyncio
 from opensearchpy import OpenSearch
 from shared.config import (
-    OPENSEARCH_HOST, OPENSEARCH_PORT, EMBEDDING_DIM,
+    OPENSEARCH_HOST, OPENSEARCH_PORT, OPENSEARCH_SSL, OPENSEARCH_VERIFY_CERTS,
+    OPENSEARCH_USER, OPENSEARCH_PASSWORD, EMBEDDING_DIM,
     IDX_DOCUMENTS, IDX_CHUNKS,
 )
 
@@ -11,8 +12,9 @@ def _get_client() -> OpenSearch:
     return OpenSearch(
         hosts=[{"host": OPENSEARCH_HOST, "port": OPENSEARCH_PORT}],
         http_compress=True,
-        use_ssl=False,
-        verify_certs=False,
+        use_ssl=OPENSEARCH_SSL,
+        verify_certs=OPENSEARCH_VERIFY_CERTS,
+        http_auth=(OPENSEARCH_USER, OPENSEARCH_PASSWORD) if OPENSEARCH_USER else None,
     )
 
 

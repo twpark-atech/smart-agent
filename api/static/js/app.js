@@ -270,8 +270,8 @@ function quickQuery() {
         </div>`;
       } else {
         ansEl.innerHTML = `<div class="answer-box">
-          <div class="answer-status text-danger">✕ ${escHtml(result.reason || '실패')}</div>
-          <div class="text-dim text-sm">${escHtml(result.detail || '')}</div>
+          <div class="answer-status text-danger">✕ ${escHtml(result.message || '검색 결과가 충분하지 않아 답변을 생성할 수 없습니다.')}</div>
+          ${result.partial_result ? `<hr class="divider"><div class="card-title" style="font-size:13px;color:var(--warning)">⚠ 부분 결과</div><div class="answer-text">${escHtml(result.partial_result)}</div>` : ''}
         </div>`;
       }
     },
@@ -311,10 +311,10 @@ function renderUpload(el) {
         <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
           <div class="upload-icon">📂</div>
           <div class="upload-label">파일을 드래그하거나 클릭하여 업로드</div>
-          <div class="upload-sub">PDF · DOCX · HWPX · PPTX · PNG · JPG 지원</div>
+          <div class="upload-sub">PDF · DOCX · HWPX · PPTX · XLSX · CSV · PNG · JPG 지원</div>
         </div>
         <input type="file" id="file-input" style="display:none"
-               accept=".pdf,.docx,.hwpx,.pptx,.png,.jpg,.jpeg"
+               accept=".pdf,.docx,.hwpx,.pptx,.xlsx,.csv,.png,.jpg,.jpeg"
                onchange="handleFileSelect(this.files)">
 
         <div id="upload-queue" class="mt-20"></div>
@@ -985,8 +985,7 @@ function submitQuery() {
       } else {
         resultEl.innerHTML = `
           <div class="answer-box">
-            <div class="answer-status text-danger">✕ ${escHtml(result.reason || '검색 실패')}</div>
-            <div class="text-dim text-sm">${escHtml(result.detail || '')}</div>
+            <div class="answer-status text-danger">✕ ${escHtml(result.message || '검색 결과가 충분하지 않아 답변을 생성할 수 없습니다.')}</div>
             ${result.partial_result ? `
               <hr class="divider">
               <div class="card-title" style="font-size:13px;color:var(--warning)">⚠ 부분 결과</div>

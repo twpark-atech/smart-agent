@@ -4,13 +4,13 @@ from pathlib import Path
 
 # 처리 가능 포맷
 SUPPORTED_EXTENSIONS = {
-    ".pdf", ".hwpx", ".docx", ".pptx",
+    ".pdf", ".hwp", ".hwpx", ".docx", ".pptx",
     ".md", ".csv", ".xlsx",
     ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp",
 }
 
 # 변환이 필요한 포맷 (→ PDF)
-CONVERT_TO_PDF = {".hwpx", ".docx"}
+CONVERT_TO_PDF = {".hwp", ".hwpx", ".docx"}
 
 # 이미지 포맷
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}

@@ -2,6 +2,226 @@
 
 ---
 
+## 2026-04-10 — XLSX 시트 특정 셀 값 검색 실패 수정
+
+**문제**
+- "직물 설계표에서 RC-7242의 성통폭은 몇 인치야?" 질의 시 검색 실패
+- 정확한 값이 `parser_table_rows.row_data` JSONB에 저장되어 있어도 찾지 못함
+
+**원인 (3가지)**
+
+1. **`_PG_SCHEMA` 오래된 정보** (`retriever/agents/planner.py`)
+   - Planner LLM에 전달하는 스키마 힌트에 `sheet_name` 컬럼이 없었음
+   - LLM이 `WHERE sheet_name = 'RC-7242'` SQL을 생성할 수 없어 정량적 검색 실패
+
+2. **`quantitative` 작업 유형 분류 기준 불명확** (동일 파일)
+   - 프롬프트에 "엑셀 셀 값 조회는 quantitative 선택" 지침이 없어
+     LLM이 `document` 또는 `web`으로 오분류하는 경우 발생
+
+3. **xlsx 파일이 OpenSearch 명제 인덱스에 미등록** (`parser/section_parser/__init__.py`)
+   - `section_parser`가 xlsx/csv를 무조건 skip → `parser_propositions` 인덱스에 데이터 없음
+   - 벡터/키워드 검색 경로에서도 특정 셀 값을 찾을 수 없었음
+
+**수정**
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `retriever/agents/planner.py` | `_PG_SCHEMA`에 `sheet_name TEXT`, `description TEXT` 추가; JSONB 조회 예시·시트명 필터 예시 주석 추가 |
+| `retriever/agents/planner.py` | `_PLAN_PROMPT`의 `quantitative` 설명에 "엑셀 특정 값 조회 시 반드시 선택" 지침 추가 |
+| `parser/section_parser/__init__.py` | xlsx/csv skip 대신 `_run_table_index()` 호출; 테이블 행 전체를 `시트명: col=val, ...` 형태로 명제 생성 → 임베딩 → OpenSearch + PostgreSQL 적재 |
+
+**동작 변화**
+- Planner가 `sheet_name` 기반 SQL (`WHERE t.sheet_name = 'RC-7242'`) 생성 가능
+- 향후 xlsx 업로드 시 모든 행이 OpenSearch에 명제로 색인 → 벡터/키워드 검색도 동작
+- 기존 파싱 완료 파일은 재업로드 시 적용
+
+---
+
+## 2026-04-10 — parser_tables 컬럼 누락 오류 수정
+
+**문제**
+- `init_schema()` 호출 시 `CREATE TABLE IF NOT EXISTS`는 테이블이 이미 존재하면 DDL을 무시
+- `sheet_name`, `header_depth`, `description` 컬럼이 기존 DB에 추가되지 않아 INSERT 오류 발생
+
+**수정** (`parser/db/__init__.py`)
+- `MIGRATIONS` 상수 추가: `ALTER TABLE parser_tables ADD COLUMN IF NOT EXISTS` 3개
+- `init_schema()`에서 DDL 실행 후 MIGRATIONS도 실행하도록 변경
+- `IF NOT EXISTS`이므로 재실행 시 멱등성 보장
+
+---
+
+## 2026-04-10 — 업로드 UI에서 XLSX / CSV 파일 지원 추가
+
+**수정** (`api/static/js/app.js`)
+- 파일 선택 `<input>`의 `accept` 속성에 `.xlsx`, `.csv` 추가
+- 업로드 영역 안내 문구에 `XLSX · CSV` 추가
+- 백엔드(`detector.py`)는 이미 두 포맷을 지원하고 있어 별도 수정 불필요
+
+---
+
+## 2026-04-10 — XLSX / CSV 파싱 완성
+
+**배경**
+- `flat_parser`의 병합 셀 미처리, 테이블 영역 탐지 없음, CSV 인코딩 하드코딩 문제
+- `parser_tables` 테이블에 `sheet_name`, `header_depth`, `description` 컬럼 누락
+- `section_parser`가 xlsx/csv도 명제 추출을 시도하여 무의미한 LLM 호출 발생
+- `document_integrator`가 명제 없으면 Summary/Keywords 미생성
+
+**수정 파일**
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `parser/document_parser/models.py` | `Block`에 `sheet_name`, `header_depth`, `description` 필드 추가; `to_dict()` 반영 |
+| `parser/document_parser/flat_parser.py` | XLSX: `read_only=False` 변경, `_expand_merged_cells()` / `_detect_tables()` / `_detect_header_depth()` / `_build_flat_headers()` 구현. CSV: `chardet`으로 인코딩 자동 감지 |
+| `parser/db/__init__.py` | `parser_tables` DDL에 `sheet_name TEXT`, `header_depth INT DEFAULT 1`, `description TEXT` 추가; `_insert_table_rows()` 시그니처 및 INSERT 반영 |
+| `parser/section_parser/__init__.py` | `run()` 진입 시 `original_ext`가 `.xlsx`/`.csv`이면 즉시 반환 (`skipped: True`) |
+| `parser/document_integrator/__init__.py` | `_load_propositions()` 결과 없으면 `_load_from_tables()` 호출; `_load_from_tables()` 구현 (컬럼목록·행수·샘플 5행 가상 명제 생성) |
+| `parser/workflow/runner.py` | `_step_structurer` 결과에 `original_ext` 추가 (section_parser 스킵 판단용) |
+
+**상세**
+- `_expand_merged_cells`: `ws.merged_cells.ranges` 순회 → 상단 좌측 값을 범위 전체에 fill 후 unmerge
+- `_detect_tables`: 완전히 빈 행을 경계로 독립 테이블 영역 분리 (시트 내 복수 테이블 대응)
+- `_detect_header_depth`: 상단 행이 전부 문자열인 경우 다중 헤더로 판정
+- `_build_flat_headers`: 다중 헤더를 `"부모.자식"` 형태로 flat화, 중복 컬럼명 자동 dedup
+- CSV 인코딩: `chardet.detect()` 결과 우선, 감지 실패 시 `utf-8-sig` 폴백
+
+---
+
+## 2026-04-10 — 파싱 실패 시 UI 에러 메시지 사용자 친화적으로 개선
+
+**문제**
+- 문서 관리 상세 화면에서 실패한 step의 에러로 Python 스택트레이스 전체가 노출됨
+
+**수정** (`parser/workflow/runner.py`)
+- DB(`parser_job_steps.error`)에 저장하는 에러를 `traceback.format_exc()` → `"step_name: str(e)"` 형식으로 변경
+  - 예: `format_converter: 변환된 PDF를 찾을 수 없습니다: /tmp/parser_fc__wfax56i`
+- 스택트레이스는 `logger.error(..., exc_info=True)`로 서버 로그에만 기록
+- `import traceback` 제거
+
+---
+
+## 2026-04-10 — .hwp 파일 지원 추가
+
+**배경**
+- 구형 `.hwp` 포맷 업로드 시 "지원하지 않는 포맷" 오류 발생
+- LibreOffice가 `.hwp`를 직접 PDF로 변환하지 못함 (returncode=0이나 PDF 미생성)
+
+**변환 경로**
+```
+.hwp → hwp5html → .html → LibreOffice → .pdf → 기존 PDF 파이프라인
+```
+
+**수정 파일**
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `parser/format_converter/detector.py` | `.hwp`를 `SUPPORTED_EXTENSIONS` 및 `CONVERT_TO_PDF`에 추가 |
+| `parser/format_converter/converter.py` | `.hwp` 전용 `_hwp_to_pdf()` 분기 추가 (hwp5html → HTML → LibreOffice → PDF). LibreOffice 호출을 `_libreoffice_convert()`로 분리하고 stderr 로깅 강화 |
+
+- `hwp5html`은 시스템에 이미 설치된 CLI 도구 활용 (`/home/atech/.local/bin/hwp5html`)
+- `.hwpx` / `.docx`는 기존 LibreOffice 직접 변환 경로 유지
+
+---
+
+## 2026-04-10 — PPTX `shape is not a placeholder` 오류 수정
+
+**문제**
+- PPTX 파일 처리 시 `[FAIL] index_parser: shape is not a placeholder` 발생
+
+**원인**
+- python-pptx에서 `shape.placeholder_format` 프로퍼티는 `hasattr()`이 `True`를 반환해도 실제 접근 시 `ValueError: shape is not a placeholder`를 던지는 경우 존재
+
+**수정** (`parser/index_parser/heading_extractor.py` `extract_from_pptx()`)
+- `shape.placeholder_format` 접근을 `try/except ValueError`로 보호
+
+---
+
+## 2026-04-10 — xlsx / csv 파싱 파이프라인 완성
+
+**문제**
+- `flat_parser.py`에 xlsx/csv 파싱 코드는 있었으나, index_parser와 structurer가 표 문서를 적절히 처리하지 못함
+  - `index_parser`: `_blocks_to_text()`가 `text` 블록만 추출 → xlsx/csv의 `table` 블록은 무시 → 빈 문자열로 LLM 분류/TOC 추출 호출 (낭비 + 무의미)
+  - `structurer`: `_split_by_toc()`(텍스트 헤딩 매칭) 적용 → 표 문서에 부적절
+
+**수정 내용**
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `parser/index_parser/__init__.py` | `.csv`/`.xlsx` 진입 시 LLM 없이 즉시 반환. csv: `doc_type="스프레드시트"`, TOC=`[데이터]`. xlsx: table 블록 첫 줄에서 시트명 추출 → 시트별 TOC 항목 생성 |
+| `parser/structurer/__init__.py` | `_split_tabular()` 추가: table 블록 1개 = 섹션 1개, TOC 제목을 섹션 제목으로 매핑. `run()`에서 `.csv`/`.xlsx` 분기 추가 |
+
+---
+
+## 2026-04-10 — 이미지 크롭 시 "Crop exceeds page dimensions" 오류 수정
+
+### 문제
+
+**증상**
+- `format_converter` 단계에서 `[FAIL] format_converter: Crop exceeds page dimensions` 로그 발생
+
+**원인 분석**
+
+| # | 위치 | 원인 |
+|---|------|------|
+| 1 | `parser/document_parser/pdf_text.py` `_extract_images()` | pdfplumber가 반환하는 이미지 bbox가 페이지 경계를 미세하게 벗어나는 경우 발생 |
+| 2 | `pypdfium2` 내부 | `page.render(crop=...)` 호출 시 `math.ceil(crop * scale)` 적용 후 렌더링 가능 크기(`width = src_w - crop_l - crop_r`)가 0 이하가 되면 `ValueError: Crop exceeds page dimensions` 발생 |
+| 3 | 기존 체크 | `crop_left + crop_right >= page_width` 조건은 부동소수점 연산 후 통과해도, ceil 반올림으로 실제 렌더 크기가 0이 될 수 있음 |
+
+**수정 내용** (`parser/document_parser/pdf_text.py`)
+
+1. **bbox 클램핑**: `x0, x1, y0, y1`을 `[0, page_width/height]` 범위로 강제 클램핑하여 페이지 밖 좌표 차단
+2. **사전 검증**: pypdfium2와 동일하게 `math.ceil(crop * scale)` 적용 후 렌더 크기를 미리 계산, 1px 미만이면 skip
+3. **`try/except ValueError`**: 사전 검증 통과 후에도 예외 발생 시 해당 이미지만 건너뜀 (전체 파싱 중단 방지)
+
+---
+
+## 2026-04-10 — config 통합 및 max_retry_exceeded UI 개선
+
+### 변경 1: config 통합
+
+**배경**
+- `parser/config.py`, `api/config.py`, `retriever/config.py`, `demo/shared/config.py` 4곳에 설정이 분산되어 있었고, api/retriever config는 importlib으로 parser config를 동적 로드하는 방식
+
+**수정 내용**
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `config.py` (신규) | 루트에 모든 설정 통합. LLM, Embedding, OpenSearch, PostgreSQL, MinIO, Serper, API, Chunking, Taxonomy 포함 |
+| `parser/config.py` | 삭제 |
+| `api/config.py` | 삭제 |
+| `retriever/config.py` | 삭제 |
+| `demo/shared/config.py` | 루트 config 재수출 shim으로 교체 (`from shared.config import ...` 호환 유지) |
+| `api/main.py` | sys.path에 프로젝트 루트(`_ROOT`) 추가 |
+| `api/routers/parser.py` | importlib 동적 로드 제거 → `from config import UPLOAD_DIR` |
+| `.env` (신규) | 전체 환경 변수 기본값 파일 생성 |
+
+**추가된 OpenSearch 설정**
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `OPENSEARCH_SSL` | `false` | SSL 사용 여부 |
+| `OPENSEARCH_USER` | (빈 값) | 인증 ID |
+| `OPENSEARCH_PASSWORD` | (빈 값) | 인증 PW |
+
+---
+
+### 변경 2: max_retry_exceeded UI 개선
+
+**문제**
+- 질의 재시도 한도 초과 시 UI에 `max_retry_exceeded` 같은 기술적 코드 문자열이 그대로 노출됨
+
+**수정 내용**
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `api/static/js/app.js` | 실패 상태 표시 시 `result.reason` → `result.message` 사용 (2곳). `result.detail` 표출 제거 |
+
+- `reason: "max_retry_exceeded"`, `detail: "retrieval_retry 한도(N) 초과: ..."` 등 기술적 내용은 서버 로그(`logger.warning`)에만 남음
+- `partial_result`(부분 답변)가 있을 경우 ⚠ 부분 결과로 계속 표시
+- `orchestrator.py`의 `_failure_response`에 이미 존재하던 `message` 필드 활용 (백엔드 수정 없음)
+
+---
+
 ## 2026-04-10 — Agent 실시간 진행 상황 스트리밍 표시
 
 ### 배경

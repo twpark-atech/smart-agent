@@ -35,10 +35,11 @@ def run(parsed_result: dict) -> IndexResult:
     """format_converter 결과(parsed_result)를 받아 문서 유형 + 목차를 반환.
 
     TOC 추출 우선순위:
-      1. 원본이 docx → Heading 스타일 직접 추출 (LLM 불필요)
-      2. 원본이 pptx → 슬라이드 제목 직접 추출
-      3. 그 외 → LLM으로 앞 20페이지 분석
-      4. 모두 실패 → 문서 유형 기본 구조로 대체
+      1. 원본이 csv/xlsx → 시트(table 블록) 단위 TOC 직접 생성 (LLM 불필요)
+      2. 원본이 docx → Heading 스타일 직접 추출 (LLM 불필요)
+      3. 원본이 pptx → 슬라이드 제목 직접 추출
+      4. 그 외 → LLM으로 앞 20페이지 분석
+      5. 모두 실패 → 문서 유형 기본 구조로 대체
 
     Args:
         parsed_result: format_converter step의 result dict
@@ -51,6 +52,30 @@ def run(parsed_result: dict) -> IndexResult:
     original_path: str = parsed_result.get("original_path", "")
     ext = parsed_result.get("extension", "").lower()
     blocks: list[dict] = parsed_result.get("parsed", {}).get("blocks", [])
+
+    # csv/xlsx: 표 문서이므로 LLM 없이 시트(블록) 단위로 TOC 직접 구성
+    if ext in (".csv", ".xlsx"):
+        table_blocks = [b for b in blocks if b.get("block_type") == "table"]
+        if not table_blocks:
+            raw_toc = [{"title": "전체", "level": 1, "children": []}]
+        elif ext == ".csv":
+            raw_toc = [{"title": "데이터", "level": 1, "children": []}]
+        else:  # xlsx: 시트명을 제목으로 사용
+            raw_toc = []
+            for b in table_blocks:
+                # content 첫 줄에서 "[시트: ...]" 추출
+                first_line = b.get("content", "").splitlines()[0] if b.get("content") else ""
+                import re as _re
+                m = _re.match(r"\[시트:\s*(.+?)\]", first_line)
+                title = m.group(1).strip() if m else f"시트{b.get('page', 0) + 1}"
+                raw_toc.append({"title": title, "level": 1, "children": []})
+
+        return IndexResult(
+            doc_type="스프레드시트",
+            toc_found=True,
+            toc=_build_toc_nodes(raw_toc),
+        )
+
     preview_text = _blocks_to_text(blocks, max_pages=PREVIEW_PAGES)
 
     # 1. 문서 유형 분류

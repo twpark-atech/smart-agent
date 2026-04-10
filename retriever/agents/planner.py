@@ -18,10 +18,27 @@ _client = OpenAI(base_url=LLM_URL, api_key=LLM_API_KEY)
 
 # PostgreSQL 테이블 스키마 (Text-to-SQL용 참고 정보)
 _PG_SCHEMA = """
-parser_documents  (document_id, source_path, original_ext, doc_type, domain_category)
-parser_sections   (id, document_id, title, level, section_path, domain_category, seq)
-parser_tables     (id, document_id, block_id, section_id, page, headers JSONB, row_count, table_index)
-parser_table_rows (id, table_id, row_index, row_data JSONB)
+parser_documents  (document_id TEXT, source_path TEXT, original_ext TEXT, doc_type TEXT, domain_category TEXT)
+parser_sections   (id INT, document_id TEXT, title TEXT, level INT, section_path TEXT, domain_category TEXT, seq INT)
+parser_tables     (id INT, document_id TEXT, block_id INT, section_id INT, page INT,
+                   headers JSONB,        -- ["컬럼명1", "컬럼명2", ...]
+                   row_count INT, table_index INT,
+                   sheet_name TEXT,      -- XLSX 시트명 또는 CSV 파일명 (예: 'RC-7242')
+                   description TEXT)
+parser_table_rows (id INT, table_id INT, row_index INT,
+                   row_data JSONB)       -- {"컬럼명": "값", ...} 형태
+
+-- JSONB 값 추출 예시
+--   특정 컬럼 값:  r.row_data->>'성통폭'
+--   헤더 포함 여부: t.headers::text ILIKE '%성통폭%'
+-- 시트명 필터 예시
+--   WHERE t.sheet_name = 'RC-7242'
+-- 전형적인 xlsx 셀 값 검색 쿼리 패턴
+--   SELECT r.row_data->>'컬럼명' AS 컬럼명
+--   FROM parser_table_rows r
+--   JOIN parser_tables t ON t.id = r.table_id
+--   WHERE t.sheet_name = '시트명'
+--     AND t.headers::text ILIKE '%컬럼명%'
 """
 
 _PLAN_PROMPT = """당신은 문서 검색 시스템의 Planner입니다.
@@ -37,7 +54,9 @@ _PLAN_PROMPT = """당신은 문서 검색 시스템의 Planner입니다.
 ## 작업 유형
 - document: 내부 문서 기반 검색으로 충분한 경우
 - web: 내부 문서에 없는 최신 정보나 외부 지식이 필요한 경우
-- quantitative: 수치, 통계, 집계 등 정량적 결과가 필요한 경우
+- quantitative: 수치, 통계, 집계 등 정량적 결과가 필요한 경우.
+  특히 엑셀/표에서 특정 항목의 값(치수, 수량, 규격 등)을 찾는 경우 반드시 quantitative 선택.
+  sql_query에 sheet_name 또는 headers 기반 JOIN 쿼리를 작성할 것.
 - mixed: document + web 복합 검색이 필요한 경우
 
 ## 사용자 질의

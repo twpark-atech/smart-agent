@@ -20,10 +20,10 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-# api/ 자신과 parser / retriever 모듈 경로를 sys.path에 추가
+# 루트 및 api/ parser/ retriever/ 경로를 sys.path에 추가
 _ROOT = Path(__file__).parent.parent
 _API_DIR = Path(__file__).parent
-for _p in (_API_DIR, _ROOT / "parser", _ROOT / "retriever"):
+for _p in (_ROOT, _API_DIR, _ROOT / "parser", _ROOT / "retriever"):
     _ps = str(_p)
     if _ps not in sys.path:
         sys.path.insert(0, _ps)

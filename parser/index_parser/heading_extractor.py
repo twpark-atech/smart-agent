@@ -47,13 +47,15 @@ def extract_from_pptx(pptx_path: str) -> list[dict]:
         for shape in slide.shapes:
             if shape.has_text_frame and shape.shape_type == 13:
                 continue
-            if hasattr(shape, "placeholder_format") and shape.placeholder_format:
-                ph_idx = shape.placeholder_format.idx
-                if ph_idx == 0 and shape.has_text_frame:  # 제목 placeholder
-                    title = shape.text_frame.text.strip()
-                    if title:
-                        flat.append({"title": title, "level": 1, "page": slide_idx, "children": []})
-                    break
+            try:
+                ph_fmt = shape.placeholder_format
+            except ValueError:
+                continue
+            if ph_fmt and ph_fmt.idx == 0 and shape.has_text_frame:
+                title = shape.text_frame.text.strip()
+                if title:
+                    flat.append({"title": title, "level": 1, "page": slide_idx, "children": []})
+                break
 
     return flat
 

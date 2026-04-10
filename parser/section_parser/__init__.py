@@ -21,6 +21,10 @@ def run(job_id: str, structurer_result: dict) -> dict:
             "skipped_sections": [섹션명, ...],   # 내용 없어 건너뜀
         }
     """
+    original_ext = structurer_result.get("original_ext", "")
+    if original_ext in (".xlsx", ".csv"):
+        return _run_table_index(job_id, structurer_result)
+
     import db
 
     db.init_schema()
@@ -166,3 +170,118 @@ def _save_propositions_to_db(
                 (document_id, section_id, prop, json.dumps(keywords, ensure_ascii=False), seq),
             )
         conn.commit()
+
+
+def _run_table_index(job_id: str, structurer_result: dict) -> dict:
+    """xlsx/csv: 테이블 행 전체를 OpenSearch 명제로 색인.
+
+    각 행을 '시트명: col1=val1, col2=val2, ...' 형태의 명제로 변환하여
+    임베딩 + OpenSearch(parser_propositions) + PostgreSQL(parser_propositions) 에 저장.
+    이를 통해 벡터/키워드 검색 경로에서도 특정 셀 값을 검색할 수 있게 한다.
+    """
+    import db, json as _json
+
+    db.init_schema()
+    init_index()
+
+    doc_type        = structurer_result.get("doc_type", "")
+    domain_category = structurer_result.get("domain_category", "")
+
+    # 기존 OpenSearch 명제 삭제 (재실행 멱등성)
+    delete_by_document(job_id)
+    _reset_propositions(job_id)
+
+    # parser_tables + parser_table_rows + parser_sections JOIN 조회
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT t.id, t.section_id, t.sheet_name, t.headers
+            FROM parser_tables t
+            WHERE t.document_id = %s
+            ORDER BY t.table_index
+            """,
+            (job_id,),
+        )
+        tables = cur.fetchall()
+
+    if not tables:
+        return {"total_sections": 0, "processed_sections": 0, "total_propositions": 0, "skipped": True}
+
+    # section_id별 section_path 조회
+    section_paths: dict[int, str] = {}
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, section_path FROM parser_sections WHERE document_id = %s",
+            (job_id,),
+        )
+        for sid, spath in cur.fetchall():
+            section_paths[sid] = spath or ""
+
+    os_docs: list[dict] = []
+    total_propositions = 0
+
+    for table_id, section_id, sheet_name, headers_json in tables:
+        headers = headers_json if isinstance(headers_json, list) else _json.loads(headers_json or "[]")
+        sheet_label = sheet_name or f"테이블{table_id}"
+        section_path = section_paths.get(section_id, sheet_label)
+
+        # 해당 테이블의 모든 행 조회
+        with db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT row_index, row_data FROM parser_table_rows "
+                "WHERE table_id = %s ORDER BY row_index",
+                (table_id,),
+            )
+            rows = cur.fetchall()
+
+        propositions: list[str] = []
+        for row_index, row_data in rows:
+            if isinstance(row_data, str):
+                row_dict = _json.loads(row_data)
+            else:
+                row_dict = row_data or {}
+
+            # 빈 행 건너뜀
+            if not any(str(v).strip() for v in row_dict.values()):
+                continue
+
+            # '시트명: col1=val1, col2=val2, ...' 형태의 명제 생성
+            pairs = ", ".join(
+                f"{k}={v}" for k, v in row_dict.items() if str(v).strip()
+            )
+            prop = f"{sheet_label}: {pairs}"
+            propositions.append(prop)
+
+        if not propositions:
+            continue
+
+        # 임베딩
+        vectors = embed(propositions)
+
+        for prop, vec in zip(propositions, vectors):
+            os_docs.append({
+                "document_id":     job_id,
+                "section_id":      section_id,
+                "section_path":    section_path,
+                "doc_type":        doc_type,
+                "domain_category": domain_category,
+                "proposition":     prop,
+                "keywords":        headers,
+                "embedding":       vec,
+            })
+
+        # PostgreSQL 명제 저장
+        _save_propositions_to_db(job_id, section_id, propositions, headers)
+
+        total_propositions += len(propositions)
+        print(f"  [OK] 시트 '{sheet_label}' → 행 명제 {len(propositions)}개")
+
+    # OpenSearch bulk 색인
+    indexed = index_propositions(os_docs) if os_docs else 0
+
+    return {
+        "total_sections":     len(tables),
+        "processed_sections": len(tables),
+        "total_propositions": total_propositions,
+        "opensearch_indexed": indexed,
+    }

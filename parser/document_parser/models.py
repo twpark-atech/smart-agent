@@ -20,6 +20,9 @@ class Block:
     minio_key: str | None = None      # MinIO 오브젝트 키
     # table 전용
     table_json: list[dict] | None = None  # 표 원본 JSON (행 단위 dict 리스트)
+    sheet_name: str | None = None         # XLSX 시트명 / CSV 파일명
+    header_depth: int = 1                 # 다중 헤더 행 수
+    description: str | None = None       # LLM 생성 표 설명
 
     def to_dict(self) -> dict:
         return {
@@ -29,6 +32,9 @@ class Block:
             "bbox": self.bbox,
             "minio_key": self.minio_key,
             "table_json": self.table_json,
+            "sheet_name": self.sheet_name,
+            "header_depth": self.header_depth,
+            "description": self.description,
         }
 
 

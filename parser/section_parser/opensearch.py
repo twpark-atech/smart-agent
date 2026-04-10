@@ -7,7 +7,10 @@ from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import OPENSEARCH_HOST, OPENSEARCH_PORT, EMBEDDING_DIM
+from config import (
+    OPENSEARCH_HOST, OPENSEARCH_PORT, OPENSEARCH_SSL, OPENSEARCH_VERIFY_CERTS,
+    OPENSEARCH_USER, OPENSEARCH_PASSWORD, EMBEDDING_DIM,
+)
 
 INDEX_NAME = "parser_propositions"
 
@@ -20,6 +23,9 @@ def _get_client() -> OpenSearch:
         _client = OpenSearch(
             hosts=[{"host": OPENSEARCH_HOST, "port": OPENSEARCH_PORT}],
             http_compress=True,
+            use_ssl=OPENSEARCH_SSL,
+            verify_certs=OPENSEARCH_VERIFY_CERTS,
+            http_auth=(OPENSEARCH_USER, OPENSEARCH_PASSWORD) if OPENSEARCH_USER else None,
         )
     return _client
 

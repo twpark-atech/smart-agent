@@ -1,5 +1,6 @@
 """text-based PDF 파싱 - pypdfium2로 텍스트/이미지/표 추출 (bbox 포함)"""
 import io
+import math
 import tempfile
 import hashlib
 from pathlib import Path
@@ -94,27 +95,40 @@ def _extract_images(
     for img_info in images:
         # pdfplumber 좌표계: 좌상단 기준
         # pypdfium2 좌표계: 좌하단 기준 → y 반전
-        x0 = img_info["x0"]
-        y0 = page_height - img_info["bottom"]
-        x1 = img_info["x1"]
-        y1 = page_height - img_info["top"]
+        # 페이지 경계로 클램핑 (pdfplumber bbox가 페이지 밖으로 벗어날 수 있음)
+        x0 = max(0.0, min(img_info["x0"],    page_width))
+        x1 = max(0.0, min(img_info["x1"],    page_width))
+        y0 = max(0.0, min(page_height - img_info["bottom"], page_height))
+        y1 = max(0.0, min(page_height - img_info["top"],    page_height))
+
+        if x1 <= x0 or y1 <= y0:
+            continue
+
         bbox = [x0, y0, x1, y1]
 
         # crop = 각 면에서 잘라낼 양 (left, bottom, right, top)
-        crop_left   = max(0.0, x0)
-        crop_bottom = max(0.0, y0)
-        crop_right  = max(0.0, page_width - x1)
-        crop_top    = max(0.0, page_height - y1)
+        crop_left   = x0
+        crop_bottom = y0
+        crop_right  = page_width  - x1
+        crop_top    = page_height - y1
 
-        # 유효 영역 확인
-        if crop_left + crop_right >= page_width or crop_bottom + crop_top >= page_height:
+        # pypdfium2가 내부에서 math.ceil(crop * scale)를 적용한 뒤 검증하므로
+        # 렌더링 전 동일한 계산으로 유효 크기를 미리 확인
+        src_w = math.ceil(page_width  * scale)
+        src_h = math.ceil(page_height * scale)
+        render_w = src_w - math.ceil(crop_left * scale) - math.ceil(crop_right  * scale)
+        render_h = src_h - math.ceil(crop_bottom * scale) - math.ceil(crop_top  * scale)
+        if render_w < 1 or render_h < 1:
             continue
 
         # 해당 영역만 렌더링
-        bitmap = page.render(
-            scale=scale,
-            crop=(crop_left, crop_bottom, crop_right, crop_top),
-        )
+        try:
+            bitmap = page.render(
+                scale=scale,
+                crop=(crop_left, crop_bottom, crop_right, crop_top),
+            )
+        except ValueError:
+            continue
         pil_image = bitmap.to_pil()
         if pil_image.width < 10 or pil_image.height < 10:
             continue

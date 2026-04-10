@@ -1,0 +1,436 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775789399034,
+  "projectRoot": "/home/atech/Projects/smart-agent",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml",
+          "requirements.txt"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "fastapi",
+        "version": null,
+        "category": "backend"
+      }
+    ],
+    "packageManager": "pip",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pytest",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "tests"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "api": {
+      "path": "api",
+      "purpose": "API routes",
+      "fileCount": 4,
+      "lastAccessed": 1775789399028,
+      "keyFiles": [
+        "README.md",
+        "__init__.py",
+        "config.py",
+        "main.py"
+      ]
+    },
+    "demo": {
+      "path": "demo",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1775789399031,
+      "keyFiles": [
+        "Dockerfile",
+        "README.md",
+        "docker-compose.yml",
+        "document_type.md",
+        "domain_type.md"
+      ]
+    },
+    "parser": {
+      "path": "parser",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1775789399031,
+      "keyFiles": [
+        "README.md",
+        "__init__.py",
+        "config.py",
+        "log_config.py",
+        "main.py"
+      ]
+    },
+    "retriever": {
+      "path": "retriever",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1775789399031,
+      "keyFiles": [
+        "README.md",
+        "__init__.py",
+        "config.py",
+        "main.py",
+        "models.py"
+      ]
+    },
+    "skeleton": {
+      "path": "skeleton",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775789399031,
+      "keyFiles": [
+        "CLAUDE.md"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 22,
+      "lastAccessed": 1775789399032,
+      "keyFiles": [
+        "chunking_comparison_test.png",
+        "chunking_strategy_test.png",
+        "docker-compose.yml",
+        "multi_proposition_test.png",
+        "paragraph_similarity_test.png"
+      ]
+    },
+    "api/static": {
+      "path": "api/static",
+      "purpose": "Static files",
+      "fileCount": 1,
+      "lastAccessed": 1775789399032,
+      "keyFiles": [
+        "index.html"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "HISTORY.md",
+      "accessCount": 15,
+      "lastAccessed": 1775803532475,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 12,
+      "lastAccessed": 1775802788186,
+      "type": "directory"
+    },
+    {
+      "path": "parser/db/__init__.py",
+      "accessCount": 8,
+      "lastAccessed": 1775803283651,
+      "type": "file"
+    },
+    {
+      "path": "parser/workflow/runner.py",
+      "accessCount": 7,
+      "lastAccessed": 1775802706488,
+      "type": "directory"
+    },
+    {
+      "path": "parser/structurer/__init__.py",
+      "accessCount": 6,
+      "lastAccessed": 1775802337272,
+      "type": "file"
+    },
+    {
+      "path": "api/static/js/app.js",
+      "accessCount": 6,
+      "lastAccessed": 1775802822473,
+      "type": "file"
+    },
+    {
+      "path": "parser/section_parser/__init__.py",
+      "accessCount": 6,
+      "lastAccessed": 1775803503544,
+      "type": "file"
+    },
+    {
+      "path": "api/routers/parser.py",
+      "accessCount": 5,
+      "lastAccessed": 1775802804017,
+      "type": "file"
+    },
+    {
+      "path": "parser/document_parser/flat_parser.py",
+      "accessCount": 5,
+      "lastAccessed": 1775803282996,
+      "type": "file"
+    },
+    {
+      "path": "parser/document_integrator/__init__.py",
+      "accessCount": 5,
+      "lastAccessed": 1775803332086,
+      "type": "file"
+    },
+    {
+      "path": "parser/format_converter/converter.py",
+      "accessCount": 4,
+      "lastAccessed": 1775800387749,
+      "type": "file"
+    },
+    {
+      "path": "config.py",
+      "accessCount": 4,
+      "lastAccessed": 1775809675448,
+      "type": "file"
+    },
+    {
+      "path": "demo/shared/config.py",
+      "accessCount": 4,
+      "lastAccessed": 1775809680743,
+      "type": "file"
+    },
+    {
+      "path": "parser/section_parser/opensearch.py",
+      "accessCount": 4,
+      "lastAccessed": 1775809693464,
+      "type": "file"
+    },
+    {
+      "path": "retriever/tools/opensearch_search.py",
+      "accessCount": 4,
+      "lastAccessed": 1775809697372,
+      "type": "file"
+    },
+    {
+      "path": "api/main.py",
+      "accessCount": 3,
+      "lastAccessed": 1775792128916,
+      "type": "file"
+    },
+    {
+      "path": "parser/document_parser/pdf_text.py",
+      "accessCount": 3,
+      "lastAccessed": 1775798695676,
+      "type": "file"
+    },
+    {
+      "path": "UPDATE.md",
+      "accessCount": 3,
+      "lastAccessed": 1775802258412,
+      "type": "file"
+    },
+    {
+      "path": "parser/format_converter/detector.py",
+      "accessCount": 3,
+      "lastAccessed": 1775802803680,
+      "type": "file"
+    },
+    {
+      "path": "retriever/agents/planner.py",
+      "accessCount": 3,
+      "lastAccessed": 1775803423078,
+      "type": "file"
+    },
+    {
+      "path": ".env",
+      "accessCount": 3,
+      "lastAccessed": 1775809675321,
+      "type": "file"
+    },
+    {
+      "path": "parser/index_parser/__init__.py",
+      "accessCount": 2,
+      "lastAccessed": 1775799232636,
+      "type": "file"
+    },
+    {
+      "path": "parser/index_parser/heading_extractor.py",
+      "accessCount": 2,
+      "lastAccessed": 1775799628175,
+      "type": "file"
+    },
+    {
+      "path": "storage_strategy.md",
+      "accessCount": 2,
+      "lastAccessed": 1775801275464,
+      "type": "file"
+    },
+    {
+      "path": "chunking_strategy.md",
+      "accessCount": 2,
+      "lastAccessed": 1775801282082,
+      "type": "file"
+    },
+    {
+      "path": "parser/document_parser/models.py",
+      "accessCount": 2,
+      "lastAccessed": 1775802635172,
+      "type": "file"
+    },
+    {
+      "path": "api/routers/retriever.py",
+      "accessCount": 2,
+      "lastAccessed": 1775803283347,
+      "type": "file"
+    },
+    {
+      "path": "retriever/agents/orchestrator.py",
+      "accessCount": 2,
+      "lastAccessed": 1775803293154,
+      "type": "file"
+    },
+    {
+      "path": "api/config.py",
+      "accessCount": 1,
+      "lastAccessed": 1775790041367,
+      "type": "file"
+    },
+    {
+      "path": "parser/config.py",
+      "accessCount": 1,
+      "lastAccessed": 1775790041393,
+      "type": "file"
+    },
+    {
+      "path": "retriever/config.py",
+      "accessCount": 1,
+      "lastAccessed": 1775790041876,
+      "type": "file"
+    },
+    {
+      "path": "pyproject.toml",
+      "accessCount": 1,
+      "lastAccessed": 1775790071357,
+      "type": "file"
+    },
+    {
+      "path": "main.py",
+      "accessCount": 1,
+      "lastAccessed": 1775790071847,
+      "type": "file"
+    },
+    {
+      "path": "docker-compose.yml",
+      "accessCount": 1,
+      "lastAccessed": 1775790072655,
+      "type": "file"
+    },
+    {
+      "path": "parser/format_converter/__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1775798605045,
+      "type": "file"
+    },
+    {
+      "path": "parser/document_parser/pdf_image.py",
+      "accessCount": 1,
+      "lastAccessed": 1775798620440,
+      "type": "file"
+    },
+    {
+      "path": ".venv/lib/python3.10/site-packages/pypdfium2/_helpers/page.py",
+      "accessCount": 1,
+      "lastAccessed": 1775798649343,
+      "type": "file"
+    },
+    {
+      "path": "parser/document_parser/__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1775799175817,
+      "type": "file"
+    },
+    {
+      "path": "parser/structurer",
+      "accessCount": 1,
+      "lastAccessed": 1775799186106,
+      "type": "directory"
+    },
+    {
+      "path": "parser/document_parser/pptx_parser.py",
+      "accessCount": 1,
+      "lastAccessed": 1775799617343,
+      "type": "file"
+    },
+    {
+      "path": "parser/structurer/llm.py",
+      "accessCount": 1,
+      "lastAccessed": 1775800967116,
+      "type": "file"
+    },
+    {
+      "path": "parser/document_integrator/llm.py",
+      "accessCount": 1,
+      "lastAccessed": 1775800967557,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 1,
+      "lastAccessed": 1775801143149,
+      "type": "file"
+    },
+    {
+      "path": "metadata.md",
+      "accessCount": 1,
+      "lastAccessed": 1775801231569,
+      "type": "file"
+    },
+    {
+      "path": "parser/structurer/models.py",
+      "accessCount": 1,
+      "lastAccessed": 1775802384328,
+      "type": "file"
+    },
+    {
+      "path": "api/static",
+      "accessCount": 1,
+      "lastAccessed": 1775802793675,
+      "type": "directory"
+    },
+    {
+      "path": "parser/format_converter",
+      "accessCount": 1,
+      "lastAccessed": 1775802795649,
+      "type": "directory"
+    },
+    {
+      "path": "retriever/tools/postgres_search.py",
+      "accessCount": 1,
+      "lastAccessed": 1775803293635,
+      "type": "file"
+    },
+    {
+      "path": "retriever/agents/retriever.py",
+      "accessCount": 1,
+      "lastAccessed": 1775803294567,
+      "type": "file"
+    },
+    {
+      "path": "retriever/models.py",
+      "accessCount": 1,
+      "lastAccessed": 1775803300853,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

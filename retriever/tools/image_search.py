@@ -9,7 +9,8 @@ from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import (
-    OPENSEARCH_HOST, OPENSEARCH_PORT,
+    OPENSEARCH_HOST, OPENSEARCH_PORT, OPENSEARCH_SSL, OPENSEARCH_VERIFY_CERTS,
+    OPENSEARCH_USER, OPENSEARCH_PASSWORD,
     LLM_URL, LLM_API_KEY, VLM_MODEL,
     EMBEDDING_DIM,
 )
@@ -28,6 +29,9 @@ def _get_os() -> OpenSearch:
         _os_client = OpenSearch(
             hosts=[{"host": OPENSEARCH_HOST, "port": OPENSEARCH_PORT}],
             http_compress=True,
+            use_ssl=OPENSEARCH_SSL,
+            verify_certs=OPENSEARCH_VERIFY_CERTS,
+            http_auth=(OPENSEARCH_USER, OPENSEARCH_PASSWORD) if OPENSEARCH_USER else None,
         )
     return _os_client
 
